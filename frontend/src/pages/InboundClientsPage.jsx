@@ -14,13 +14,16 @@ import {
   AlertCircle,
   Calendar,
   HardDrive,
-  Users
+  Users,
+  QrCode,
+  Link2
 } from 'lucide-react';
 import { serversApi } from '../api/client';
 import { formatBytes, formatExpiry, isExpired } from '../utils/formatters';
 import EditClientModal from '../components/EditClientModal';
 import AddClientModal from '../components/AddClientModal';
 import ConfirmModal from '../components/ConfirmModal';
+import ClientQrModal from '../components/ClientQrModal';
 
 export default function InboundClientsPage({ server, inbound, onBack }) {
   const [clients, setClients] = useState([]);
@@ -32,6 +35,7 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
   // Modals state
   const [editingClient, setEditingClient] = useState(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [qrModalClient, setQrModalClient] = useState(null);
 
   const [clientToDelete, setClientToDelete] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -90,7 +94,7 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
 
   // Client Add Handler
   const handleClientAdded = (newClient) => {
-    setClients((prev) => [newClient, ...prev]);
+    fetchClients();
     showToast(`Client "${newClient.email}" provisioned successfully`);
   };
 
@@ -272,7 +276,17 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
                     <tr key={client.id} className="hover:bg-slate-800/30 transition-colors">
                       {/* Email / Remark */}
                       <td className="px-6 py-4">
-                        <div className="font-semibold text-white text-xs">{client.email}</div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-white text-xs">{client.email}</span>
+                          <button
+                            onClick={() => setQrModalClient(client)}
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-md transition-all shrink-0"
+                            title="Show QR Code, V2Ray URI & Subscription Link"
+                          >
+                            <QrCode className="w-3 h-3" />
+                            <span>QR / Links</span>
+                          </button>
+                        </div>
                         {client.subId && (
                           <div className="text-[10px] text-slate-500 font-mono mt-0.5">
                             Sub: {client.subId}
@@ -362,6 +376,15 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
                       {/* Inline Action Buttons */}
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          {/* QR Code & Links button */}
+                          <button
+                            onClick={() => setQrModalClient(client)}
+                            className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors"
+                            title="View QR Code, V2Ray URI, and Subscription Link"
+                          >
+                            <QrCode className="w-4 h-4 text-emerald-400" />
+                          </button>
+
                           {/* Edit button */}
                           <button
                             onClick={() => setEditingClient(client)}
@@ -398,6 +421,15 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
           </div>
         </div>
       )}
+
+      {/* Client QR Code & Links Modal */}
+      <ClientQrModal
+        isOpen={!!qrModalClient}
+        onClose={() => setQrModalClient(null)}
+        client={qrModalClient}
+        inbound={inbound}
+        server={server}
+      />
 
       {/* Edit Client Modal */}
       <EditClientModal

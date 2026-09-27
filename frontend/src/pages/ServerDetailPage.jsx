@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import { serversApi } from '../api/client';
 import { formatBytes } from '../utils/formatters';
+import SystemResourceWidget from '../components/SystemResourceWidget';
+
 
 export default function ServerDetailPage({ server, onBack, onSelectInbound }) {
   const [inbounds, setInbounds] = useState([]);
@@ -98,6 +100,9 @@ export default function ServerDetailPage({ server, onBack, onSelectInbound }) {
           </button>
         </div>
       </div>
+
+      {/* Instance Hardware & System Resources (CPU, RAM, Disk, Uptime) */}
+      <SystemResourceWidget serverId={server._id} serverNickname={server.nickname} />
 
       {/* Error state */}
       {error && (

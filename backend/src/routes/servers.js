@@ -280,6 +280,50 @@ router.post('/:id/test', proxyLimiter, async (req, res) => {
 });
 
 /**
+ * GET /api/servers/:id/status
+ * Fetches instance CPU, RAM, Disk, Uptime, and Xray system status live from 3x-ui.
+ */
+router.get('/:id/status', proxyLimiter, async (req, res) => {
+  try {
+    const server = await getOwnedServerWithCredentials(req.params.id, req.user._id);
+    if (!server) {
+      return res.status(404).json({ success: false, error: 'Server not found or access denied' });
+    }
+
+    const authConfig = getDecryptedAuthConfig(server);
+
+    try {
+      const status = await panelService.getServerStatus(server.panelUrl, authConfig);
+
+      server.status = 'online';
+      server.lastConnectedAt = new Date();
+      await server.save();
+
+      return res.status(200).json({
+        success: true,
+        status
+      });
+    } catch (panelErr) {
+      server.status = 'offline';
+      server.lastError = panelErr.message;
+      await server.save();
+
+      return res.status(502).json({
+        success: false,
+        error: `Failed to fetch instance system status: ${panelErr.message}`
+      });
+    }
+  } catch (error) {
+    console.error('[Get Server Status Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to retrieve server status'
+    });
+  }
+});
+
+
+/**
  * GET /api/servers/:id/inbounds
  * Live inbounds proxy.
  */
@@ -386,13 +430,13 @@ router.post('/:id/inbounds/:inboundId/clients', proxyLimiter, async (req, res) =
 
     const crypto = require('crypto');
     const newClient = {
-      id: crypto.randomUUID(),
+      id: req.body.id || crypto.randomUUID(),
       email: email.trim(),
       enable: enable !== false,
       totalGB: totalGB ? Number(totalGB) : 0,
       expiryTime: expiryTime ? Number(expiryTime) : 0,
       limitIp: limitIp ? Number(limitIp) : 0,
-      flow: ''
+      flow: req.body.flow || ''
     };
 
     const result = await panelService.addClient(

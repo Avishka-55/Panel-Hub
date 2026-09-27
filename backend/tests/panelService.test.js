@@ -98,6 +98,29 @@ test('panelService.resetClientTraffic: resets client traffic counters', async ()
   assert.equal(bob.down, 0);
 });
 
+test('panelService.addClient: adds a new client to inbound', async () => {
+  const addResult = await panelService.addClient(
+    mockServer.url,
+    'admin',
+    'password123',
+    1,
+    {
+      email: 'carol@example.com',
+      totalGB: 50 * 1024 * 1024 * 1024,
+      expiryTime: 1800000000000,
+      enable: true
+    }
+  );
+
+  assert.equal(addResult.success, true);
+  assert.equal(addResult.client.email, 'carol@example.com');
+
+  const clients = await panelService.getInboundClients(mockServer.url, 'admin', 'password123', 1);
+  const carol = clients.find((c) => c.email === 'carol@example.com');
+  assert.ok(carol, 'Carol should be found in live clients list');
+  assert.equal(carol.enable, true);
+});
+
 test('panelService.deleteClient: removes client from inbound', async () => {
   const deleteResult = await panelService.deleteClient(
     mockServer.url,
@@ -112,5 +135,5 @@ test('panelService.deleteClient: removes client from inbound', async () => {
   const clients = await panelService.getInboundClients(mockServer.url, 'admin', 'password123', 1);
   const bob = clients.find((c) => c.email === 'bob@example.com');
   assert.equal(bob, undefined, 'Bob should be deleted from inbound');
-  assert.equal(clients.length, 1);
 });
+

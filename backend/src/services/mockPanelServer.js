@@ -176,6 +176,55 @@ function createMock3xUiServer(port = 0, defaultUsername = 'admin', defaultPasswo
       return res.end(JSON.stringify({ success: true, msg: 'Inbounds fetched', obj: mockInbounds }));
     }
 
+    // Route: GET /panel/api/server/status OR POST /server/status
+    if ((pathname === '/panel/api/server/status' || pathname === '/server/status') && (req.method === 'GET' || req.method === 'POST')) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({
+        success: true,
+        msg: 'Server status fetched',
+        obj: {
+          cpu: 12.5,
+          cpuCores: 4,
+          logicalPro: 4,
+          cpuSpeedMhz: 2400,
+          mem: {
+            current: 1073741824, // 1 GB
+            total: 4294967296    // 4 GB
+          },
+          swap: {
+            current: 0,
+            total: 1073741824
+          },
+          disk: {
+            current: 15032385536, // 14 GB
+            total: 53687091200    // 50 GB
+          },
+          xray: {
+            state: 'running',
+            version: '26.6.1',
+            errorMsg: ''
+          },
+          panelVersion: '3.2.6',
+          uptime: 864000, // 10 days
+          loads: [0.15, 0.22, 0.18],
+          tcpCount: 42,
+          udpCount: 8,
+          netIO: {
+            up: 2048,
+            down: 8192
+          },
+          netTraffic: {
+            sent: 53687091200,
+            recv: 107374182400
+          },
+          publicIP: {
+            ipv4: '127.0.0.1'
+          }
+        }
+      }));
+    }
+
+
     // Route: POST /panel/api/clients/update/:clientId OR /panel/api/inbounds/updateClient/:clientId
     const modernUpdateMatch = pathname.match(/^\/panel\/api\/clients\/update\/(.+)$/);
     const classicUpdateMatch = pathname.match(/^\/panel\/api\/inbounds\/updateClient\/(.+)$/);
@@ -273,7 +322,12 @@ function createMock3xUiServer(port = 0, defaultUsername = 'admin', defaultPasswo
       let inboundId = Number(parsedBody.inboundId || parsedBody.id || 1);
       let newClient = parsedBody;
 
-      if (parsedBody.settings) {
+      if (parsedBody.client) {
+        newClient = parsedBody.client;
+        if (Array.isArray(parsedBody.inboundIds) && parsedBody.inboundIds.length > 0) {
+          inboundId = Number(parsedBody.inboundIds[0]);
+        }
+      } else if (parsedBody.settings) {
         try {
           const clientSettings = typeof parsedBody.settings === 'string'
             ? JSON.parse(parsedBody.settings)
@@ -293,6 +347,8 @@ function createMock3xUiServer(port = 0, defaultUsername = 'admin', defaultPasswo
           inboundId,
           enable: newClient.enable !== false,
           email: newClient.email,
+          uuid: newClient.id,
+          subId: newClient.subId || '',
           up: 0,
           down: 0,
           expiryTime: newClient.expiryTime || 0,

@@ -1,5 +1,7 @@
 const axios = require('axios');
 const https = require('https');
+const crypto = require('crypto');
+const { generateClientLinks } = require('../utils/linkGenerator');
 
 // Create an HTTPS agent that allows self-signed certificates common in 3x-ui panels
 const insecureHttpsAgent = new https.Agent({
@@ -346,6 +348,8 @@ async function getInboundClients(panelUrl, authConfigOrUsername, passwordOrInbou
 
   return clients.map((c) => {
     const stat = statsMap.get(c.email) || statsMap.get(String(c.id)) || {};
+    const links = generateClientLinks(c, targetInbound, panelUrl);
+
     return {
       id: c.id || c.password || c.email,
       email: c.email || 'unnamed',
@@ -359,7 +363,14 @@ async function getInboundClients(panelUrl, authConfigOrUsername, passwordOrInbou
       flow: c.flow || '',
       inboundId: targetInbound.id,
       inboundRemark: targetInbound.remark,
-      protocol: targetInbound.protocol
+      protocol: targetInbound.protocol,
+      port: targetInbound.port,
+      streamSettings: typeof targetInbound.streamSettings === 'string'
+        ? JSON.parse(targetInbound.streamSettings || '{}')
+        : targetInbound.streamSettings,
+      link: links.v2rayLink,
+      subUrl: links.subUrl,
+      host: links.host
     };
   });
 }
@@ -621,20 +632,79 @@ async function addClient(panelUrl, authConfigOrUsername, passwordOrInboundId, in
 
   const { client } = await getAuthenticatedClient(panelUrl, authConfig);
 
-  const normalizedClient = {
-    ...clientData,
-    limitIp: Number(clientData.limitIp) || 0,
+  const clientObj = {
+    id: clientData.id || crypto.randomUUID(),
+    email: clientData.email,
+    subId: clientData.subId || crypto.randomBytes(8).toString('hex'),
+    password: clientData.password || crypto.randomBytes(8).toString('hex'),
+    auth: clientData.auth || crypto.randomBytes(8).toString('hex'),
+    flow: clientData.flow || '',
+    security: clientData.security || 'auto',
     totalGB: Number(clientData.totalGB) || 0,
     expiryTime: Number(clientData.expiryTime) || 0,
+    reset: 0,
+    limitIp: Number(clientData.limitIp) || 0,
     tgId: 0,
-    inboundId: Number(inboundId)
+    group: clientData.group || '',
+    comment: clientData.comment || '',
+    enable: clientData.enable !== false
   };
 
   // Strategy 1: Modern 3x-ui POST /panel/api/clients/add
   try {
-    const modernRes = await client.post('panel/api/clients/add', normalizedClient);
+    const modernRes = await client.post('panel/api/clients/add', {
+      client: clientObj,
+      inboundIds: [Number(inboundId)]
+    });
     if (modernRes.data?.success) {
-      return { success: true, client: normalizedClient };
+      return { success: true, client: { ...clientObj, inboundId: Number(inboundId) } };
+    }
+    if (modernRes.data?.msg) {
+      throw new Error(modernRes.data.msg);
+    }
+  } catch (err) {
+    if (err.response && err.response.status !== 404 && err.response.status !== 405) {
+      throw new Error(err.response.data?.msg || err.message);
+    }
+    if (!err.response) {
+      throw err;
+    }
+  }
+
+  // Strategy 2: Classic 3x-ui POST /panel/api/inbounds/addClient
+  try {
+    const payload = {
+      id: Number(inboundId),
+      settings: JSON.stringify({
+        clients: [clientObj]
+      })
+    };
+
+    const response = await client.post('panel/api/inbounds/addClient', payload);
+    if (response.data?.success) {
+      return { success: true, client: { ...clientObj, inboundId: Number(inboundId) } };
+    }
+    throw new Error(response.data?.msg || 'Failed to add client to inbound');
+  } catch (err) {
+    throw new Error(err.response?.data?.msg || err.message || 'Failed to add client to inbound');
+  }
+}
+
+
+/**
+ * Fetches instance system status (CPU, RAM, Disk, Uptime, Xray) from 3x-ui.
+ */
+async function getServerStatus(panelUrl, authConfigOrUsername, password) {
+  const authConfig = resolveAuthConfig(authConfigOrUsername, password);
+  const { client } = await getAuthenticatedClient(panelUrl, authConfig);
+
+  let raw = null;
+
+  // Strategy 1: Modern 3x-ui GET /panel/api/server/status
+  try {
+    const res = await client.get('panel/api/server/status');
+    if (res.data?.success && res.data?.obj) {
+      raw = res.data.obj;
     }
   } catch (err) {
     if (err.response && err.response.status !== 404) {
@@ -642,20 +712,91 @@ async function addClient(panelUrl, authConfigOrUsername, passwordOrInboundId, in
     }
   }
 
-  // Strategy 2: Classic 3x-ui POST /panel/api/inbounds/addClient
-  const payload = {
-    id: Number(inboundId),
-    settings: JSON.stringify({
-      clients: [normalizedClient]
-    })
-  };
-
-  const response = await client.post('panel/api/inbounds/addClient', payload);
-  if (!response.data?.success) {
-    throw new Error(response.data?.msg || 'Failed to add client to inbound');
+  // Strategy 2: Classic 3x-ui POST /server/status
+  if (!raw) {
+    try {
+      const res = await client.post('server/status', {});
+      if (res.data?.success && res.data?.obj) {
+        raw = res.data.obj;
+      }
+    } catch (err) {
+      if (err.response && err.response.status !== 404) {
+        throw new Error(err.response.data?.msg || err.message);
+      }
+    }
   }
 
-  return { success: true, client: normalizedClient };
+  // Strategy 3: Classic 3x-ui GET /server/status
+  if (!raw) {
+    try {
+      const res = await client.get('server/status');
+      if (res.data?.success && res.data?.obj) {
+        raw = res.data.obj;
+      }
+    } catch (err) {
+      throw new Error(err.response?.data?.msg || err.message || 'Failed to fetch server status');
+    }
+  }
+
+  if (!raw) {
+    throw new Error('Could not retrieve system status from panel');
+  }
+
+  const memTotal = raw.mem?.total || 0;
+  const memCurrent = raw.mem?.current || 0;
+  const memPercent = memTotal > 0 ? Math.min(100, Math.round((memCurrent / memTotal) * 100)) : 0;
+
+  const diskTotal = raw.disk?.total || 0;
+  const diskCurrent = raw.disk?.current || 0;
+  const diskPercent = diskTotal > 0 ? Math.min(100, Math.round((diskCurrent / diskTotal) * 100)) : 0;
+
+  let cpuVal = Number(raw.cpu) || 0;
+  if (cpuVal > 0 && cpuVal <= 1) {
+    cpuVal = parseFloat((cpuVal * 100).toFixed(1));
+  } else {
+    cpuVal = parseFloat(cpuVal.toFixed(1));
+  }
+
+  return {
+    cpu: {
+      percent: cpuVal,
+      cores: raw.cpuCores || raw.logicalPro || 1,
+      speedMhz: raw.cpuSpeedMhz || 0
+    },
+    mem: {
+      current: memCurrent,
+      total: memTotal,
+      percent: memPercent
+    },
+    disk: {
+      current: diskCurrent,
+      total: diskTotal,
+      percent: diskPercent
+    },
+    swap: {
+      current: raw.swap?.current || 0,
+      total: raw.swap?.total || 0
+    },
+    xray: {
+      state: raw.xray?.state || 'running',
+      version: raw.xray?.version || '',
+      errorMsg: raw.xray?.errorMsg || ''
+    },
+    panelVersion: raw.panelVersion || '',
+    uptime: raw.uptime || 0,
+    loads: raw.loads || [],
+    tcpCount: raw.tcpCount || 0,
+    udpCount: raw.udpCount || 0,
+    netIO: {
+      up: raw.netIO?.up || 0,
+      down: raw.netIO?.down || 0
+    },
+    netTraffic: {
+      sent: raw.netTraffic?.sent || 0,
+      recv: raw.netTraffic?.recv || 0
+    },
+    publicIP: raw.publicIP?.ipv4 || ''
+  };
 }
 
 module.exports = {
@@ -667,5 +808,7 @@ module.exports = {
   updateClient,
   deleteClient,
   resetClientTraffic,
-  addClient
+  addClient,
+  getServerStatus
 };
+

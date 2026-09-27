@@ -235,8 +235,21 @@ test('Tenant Isolation: User B cannot view User A servers', async () => {
   assert.equal(resGet.status, 404, 'User B must receive 404/not found for User A server');
 });
 
+test('Server Status Proxy: GET /api/servers/:id/status fetches instance CPU, RAM, Disk, and Uptime', async () => {
+  const res = await request('GET', `/api/servers/${serverAId}/status`, null, userTokenA);
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.success, true);
+  assert.ok(res.body.status.cpu);
+  assert.ok(res.body.status.mem);
+  assert.ok(res.body.status.disk);
+  assert.equal(res.body.status.xray.state, 'running');
+  assert.ok(res.body.status.uptime > 0);
+});
+
 test('Inbounds Proxy: GET /api/servers/:id/inbounds fetches live inbounds', async () => {
   const res = await request('GET', `/api/servers/${serverAId}/inbounds`, null, userTokenA);
+
 
   assert.equal(res.status, 200);
   assert.ok(Array.isArray(res.body.inbounds));
@@ -254,6 +267,30 @@ test('Clients Proxy: GET /api/servers/:id/inbounds/:inboundId/clients fetches li
   assert.equal(res.body.clients[0].email, 'alice@example.com');
   assert.equal(res.body.clients[1].email, 'bob@example.com');
 });
+
+test('Clients Proxy: POST /api/servers/:id/inbounds/:inboundId/clients adds a client live', async () => {
+  const res = await request(
+    'POST',
+    `/api/servers/${serverAId}/inbounds/1/clients`,
+    {
+      email: 'newuser@example.com',
+      totalGB: 25 * 1024 * 1024 * 1024,
+      expiryTime: Date.now() + 30 * 86400000,
+      enable: true
+    },
+    userTokenA
+  );
+
+  assert.equal(res.status, 201);
+  assert.equal(res.body.success, true);
+  assert.equal(res.body.client.email, 'newuser@example.com');
+
+  // Verify client is present in inbound
+  const listRes = await request('GET', `/api/servers/${serverAId}/inbounds/1/clients`, null, userTokenA);
+  const found = listRes.body.clients.find((c) => c.email === 'newuser@example.com');
+  assert.ok(found, 'New client should be found in live client list');
+});
+
 
 test('Clients Proxy: PATCH /api/servers/:id/clients/:clientId updates client live', async () => {
   const newExpiry = Date.now() + 60 * 86400000;
@@ -318,9 +355,10 @@ test('Clients Proxy: DELETE /api/servers/:id/clients/:clientId deletes client li
   assert.equal(res.status, 200);
   assert.equal(res.body.success, true);
 
-  // Confirm client list now has only 1 client left
+  // Confirm client is deleted
   const clientsRes = await request('GET', `/api/servers/${serverAId}/inbounds/1/clients`, null, userTokenA);
-  assert.equal(clientsRes.body.clients.length, 1);
+  const deletedBob = clientsRes.body.clients.find((c) => c.email === 'bob@example.com');
+  assert.equal(deletedBob, undefined, 'Deleted client should no longer be present');
 });
 
 test('Servers: DELETE /api/servers/:id deletes server', async () => {
