@@ -1,0 +1,22 @@
+{
+  "name": "panel-hub",
+  "version": "1.0.0",
+  "description": "Multi-tenant SaaS Admin Platform for managing multiple 3x-ui VPN panels from a single dashboard",
+  "scripts": {
+    "start": "cd backend && npm start",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build:frontend": "cd frontend && npm run build",
+    "test": "cd backend && npm test"
+  },
+  "keywords": [
+    "3x-ui",
+    "vpn",
+    "saas",
+    "multi-tenant",
+    "xray",
+    "aes-256-gcm"
+  ],
+  "author": "",
+  "license": "MIT"
+}

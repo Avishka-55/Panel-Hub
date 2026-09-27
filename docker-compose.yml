@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: panelhub-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - panelhub-network
+
+  panelhub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: panelhub-app
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb://mongodb:27017/panelhub
+      - JWT_SECRET=change_this_jwt_secret_in_production_deployment
+      - JWT_EXPIRES_IN=7d
+      - MASTER_KEY=${MASTER_KEY:-f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f00}
+    depends_on:
+      - mongodb
+    networks:
+      - panelhub-network
+
+volumes:
+  mongo_data:
+    driver: local
+
+networks:
+  panelhub-network:
+    driver: bridge
