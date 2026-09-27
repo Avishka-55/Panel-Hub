@@ -184,6 +184,46 @@ test('Servers: GET /api/servers returns user servers with no secrets exposed', a
   assert.equal(server.panelPasswordEncrypted, undefined);
   assert.equal(server.panelPasswordIv, undefined);
   assert.equal(server.panelPasswordAuthTag, undefined);
+  assert.equal(server.panelApiKeyEncrypted, undefined);
+  assert.equal(server.panelApiKeyIv, undefined);
+  assert.equal(server.panelApiKeyAuthTag, undefined);
+});
+
+test('Servers: Add connected 3x-ui server with encrypted API Key', async () => {
+  const res = await request(
+    'POST',
+    '/api/servers',
+    {
+      nickname: 'Tokyo Node API Token',
+      panelUrl: mockPanel.url,
+      authType: 'api_key',
+      apiKey: 'mock-api-key'
+    },
+    userTokenA
+  );
+
+  assert.equal(res.status, 201);
+  assert.equal(res.body.server.nickname, 'Tokyo Node API Token');
+  assert.equal(res.body.server.status, 'online');
+  assert.equal(res.body.server.authType, 'api_key');
+
+  // CRITICAL SECURITY ASSERTIONS: Never expose encrypted or raw API keys
+  assert.equal(res.body.server.apiKey, undefined);
+  assert.equal(res.body.server.panelApiKeyEncrypted, undefined);
+  assert.equal(res.body.server.panelApiKeyIv, undefined);
+  assert.equal(res.body.server.panelApiKeyAuthTag, undefined);
+
+  // Check direct MongoDB doc has encrypted values
+  const dbDoc = await Server.findById(res.body.server._id).select('+panelApiKeyEncrypted +panelApiKeyIv +panelApiKeyAuthTag');
+  assert.ok(dbDoc.panelApiKeyEncrypted);
+  assert.notEqual(dbDoc.panelApiKeyEncrypted, 'mock-api-key');
+  assert.ok(dbDoc.panelApiKeyIv);
+  assert.ok(dbDoc.panelApiKeyAuthTag);
+
+  // Test live inbounds using API Key server
+  const inboundsRes = await request('GET', `/api/servers/${res.body.server._id}/inbounds`, null, userTokenA);
+  assert.equal(inboundsRes.status, 200);
+  assert.equal(inboundsRes.body.inbounds.length, 2);
 });
 
 test('Tenant Isolation: User B cannot view User A servers', async () => {
@@ -286,6 +326,12 @@ test('Clients Proxy: DELETE /api/servers/:id/clients/:clientId deletes client li
 test('Servers: DELETE /api/servers/:id deletes server', async () => {
   const res = await request('DELETE', `/api/servers/${serverAId}`, null, userTokenA);
   assert.equal(res.status, 200);
+
+  // Also clean up any other added test servers
+  const remaining = await request('GET', '/api/servers', null, userTokenA);
+  for (const s of remaining.body.servers) {
+    await request('DELETE', `/api/servers/${s._id}`, null, userTokenA);
+  }
 
   const listRes = await request('GET', '/api/servers', null, userTokenA);
   assert.equal(listRes.body.servers.length, 0);

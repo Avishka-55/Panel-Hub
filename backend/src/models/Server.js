@@ -19,25 +19,41 @@ const serverSchema = new mongoose.Schema(
       required: [true, 'Panel URL is required'],
       trim: true
     },
+    authType: {
+      type: String,
+      enum: ['credentials', 'api_key'],
+      default: 'credentials'
+    },
     panelUsername: {
       type: String,
-      required: [true, 'Panel username is required'],
-      trim: true
+      trim: true,
+      default: ''
     },
+    // AES-256-GCM encrypted password fields
     panelPasswordEncrypted: {
       type: String,
-      required: [true, 'Encrypted panel password is required'],
-      select: false // Never return in default queries
+      select: false // Never return in queries
     },
     panelPasswordIv: {
       type: String,
-      required: [true, 'Panel password IV is required'],
-      select: false // Never return in default queries
+      select: false // Never return in queries
     },
     panelPasswordAuthTag: {
       type: String,
-      required: [true, 'Panel password Auth Tag is required'],
-      select: false // Never return in default queries
+      select: false // Never return in queries
+    },
+    // AES-256-GCM encrypted API Key fields
+    panelApiKeyEncrypted: {
+      type: String,
+      select: false // Never return in queries
+    },
+    panelApiKeyIv: {
+      type: String,
+      select: false // Never return in queries
+    },
+    panelApiKeyAuthTag: {
+      type: String,
+      select: false // Never return in queries
     },
     lastConnectedAt: {
       type: Date,
@@ -65,10 +81,13 @@ const serverSchema = new mongoose.Schema(
     timestamps: false,
     toJSON: {
       transform(doc, ret) {
-        // Enforce strict security: Never return any encrypted or raw credentials
+        // Enforce strict security: Never return any raw or encrypted credentials/tokens
         delete ret.panelPasswordEncrypted;
         delete ret.panelPasswordIv;
         delete ret.panelPasswordAuthTag;
+        delete ret.panelApiKeyEncrypted;
+        delete ret.panelApiKeyIv;
+        delete ret.panelApiKeyAuthTag;
         delete ret.__v;
         return ret;
       }

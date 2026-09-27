@@ -22,7 +22,34 @@ async function getOwnedServerWithCredentials(serverId, userId) {
   return Server.findOne({
     _id: serverId,
     ownerId: userId
-  }).select('+panelPasswordEncrypted +panelPasswordIv +panelPasswordAuthTag');
+  }).select(
+    '+panelPasswordEncrypted +panelPasswordIv +panelPasswordAuthTag +panelApiKeyEncrypted +panelApiKeyIv +panelApiKeyAuthTag'
+  );
+}
+
+/**
+ * Decrypts in-memory authentication configuration for the panel.
+ * Never logs or exposes credentials.
+ */
+function getDecryptedAuthConfig(server) {
+  if (server.authType === 'api_key' && server.panelApiKeyEncrypted) {
+    const apiKey = decrypt(
+      server.panelApiKeyEncrypted,
+      server.panelApiKeyIv,
+      server.panelApiKeyAuthTag
+    );
+    return { apiKey };
+  }
+
+  const password = decrypt(
+    server.panelPasswordEncrypted,
+    server.panelPasswordIv,
+    server.panelPasswordAuthTag
+  );
+  return {
+    username: server.panelUsername,
+    password
+  };
 }
 
 /**
@@ -48,53 +75,86 @@ router.get('/', async (req, res) => {
 /**
  * POST /api/servers
  * Connect and add a new 3x-ui server.
- * Plaintext password is encrypted via AES-256-GCM before saving to MongoDB.
+ * Supports both API Key (Bearer token) and Username/Password modes.
+ * Secrets are encrypted via AES-256-GCM before saving to MongoDB and never returned.
  */
 router.post('/', async (req, res) => {
   try {
-    const { nickname, panelUrl, panelUsername, panelPassword } = req.body;
+    const { nickname, panelUrl, authType = 'credentials' } = req.body;
 
-    if (!nickname || !panelUrl || !panelUsername || !panelPassword) {
+    if (!nickname || !panelUrl) {
       return res.status(400).json({
         success: false,
-        error: 'Nickname, panelUrl, panelUsername, and panelPassword are required'
+        error: 'Nickname and panelUrl are required'
       });
     }
 
-    // Encrypt password using AES-256-GCM before database persistence
-    const { ciphertext, iv, authTag } = encrypt(panelPassword);
+    const isApiKey = authType === 'api_key';
+    let authConfig;
+    let encryptedCreds;
 
-    // Initial health check / test connection
+    if (isApiKey) {
+      const { apiKey } = req.body;
+      if (!apiKey || !apiKey.trim()) {
+        return res.status(400).json({
+          success: false,
+          error: 'API Key is required when using API Key authentication'
+        });
+      }
+      authConfig = { apiKey: apiKey.trim() };
+      encryptedCreds = encrypt(apiKey.trim());
+    } else {
+      const { panelUsername, panelPassword } = req.body;
+      if (!panelUsername || !panelPassword) {
+        return res.status(400).json({
+          success: false,
+          error: 'Panel username and password are required for credentials authentication'
+        });
+      }
+      authConfig = { username: panelUsername.trim(), password: panelPassword };
+      encryptedCreds = encrypt(panelPassword);
+    }
+
+    // Initial connection test
     let initialStatus = 'untested';
     let inboundCount = 0;
     let initialError = null;
 
     try {
-      const connTest = await panelService.testConnection(panelUrl, panelUsername, panelPassword);
+      const connTest = await panelService.testConnection(panelUrl, authConfig);
       if (connTest.success) {
         initialStatus = 'online';
         inboundCount = connTest.inboundCount;
       }
     } catch (testErr) {
-      console.warn(`[Server Add Notice] Initial connection test failed for "${nickname}": ${testErr.message}`);
+      console.warn(`[Server Add Notice] Connection test failed for "${nickname}": ${testErr.message}`);
       initialStatus = 'error';
       initialError = testErr.message;
     }
 
-    const server = new Server({
+    const serverData = {
       ownerId: req.user._id,
       nickname: nickname.trim(),
       panelUrl: panelUrl.trim(),
-      panelUsername: panelUsername.trim(),
-      panelPasswordEncrypted: ciphertext,
-      panelPasswordIv: iv,
-      panelPasswordAuthTag: authTag,
+      authType: isApiKey ? 'api_key' : 'credentials',
       status: initialStatus,
       lastError: initialError,
       inboundCount,
       lastConnectedAt: initialStatus === 'online' ? new Date() : null
-    });
+    };
 
+    if (isApiKey) {
+      serverData.panelApiKeyEncrypted = encryptedCreds.ciphertext;
+      serverData.panelApiKeyIv = encryptedCreds.iv;
+      serverData.panelApiKeyAuthTag = encryptedCreds.authTag;
+    } else {
+      serverData.panelUsername = req.body.panelUsername.trim();
+      serverData.panelPasswordEncrypted = encryptedCreds.ciphertext;
+      serverData.panelPasswordIv = encryptedCreds.iv;
+      serverData.panelPasswordAuthTag = encryptedCreds.authTag;
+    }
+
+    const server = new Server(serverData);
     await server.save();
 
     return res.status(201).json({
@@ -113,7 +173,7 @@ router.post('/', async (req, res) => {
 
 /**
  * GET /api/servers/:id
- * Retrieve single server details (never credentials).
+ * Retrieve single server details (never credentials or API keys).
  */
 router.get('/:id', async (req, res) => {
   try {
@@ -182,19 +242,10 @@ router.post('/:id/test', proxyLimiter, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Server not found or access denied' });
     }
 
-    // Decrypt credentials in memory strictly for the API call
-    const decryptedPassword = decrypt(
-      server.panelPasswordEncrypted,
-      server.panelPasswordIv,
-      server.panelPasswordAuthTag
-    );
+    const authConfig = getDecryptedAuthConfig(server);
 
     try {
-      const result = await panelService.testConnection(
-        server.panelUrl,
-        server.panelUsername,
-        decryptedPassword
-      );
+      const result = await panelService.testConnection(server.panelUrl, authConfig);
 
       server.status = 'online';
       server.lastConnectedAt = new Date();
@@ -230,7 +281,7 @@ router.post('/:id/test', proxyLimiter, async (req, res) => {
 
 /**
  * GET /api/servers/:id/inbounds
- * Backend logs into the 3x-ui panel (decrypt creds in memory), fetches inbound list, returns it live.
+ * Live inbounds proxy.
  */
 router.get('/:id/inbounds', proxyLimiter, async (req, res) => {
   try {
@@ -239,21 +290,11 @@ router.get('/:id/inbounds', proxyLimiter, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Server not found or access denied' });
     }
 
-    // Decrypt credentials in memory
-    const decryptedPassword = decrypt(
-      server.panelPasswordEncrypted,
-      server.panelPasswordIv,
-      server.panelPasswordAuthTag
-    );
+    const authConfig = getDecryptedAuthConfig(server);
 
     try {
-      const inbounds = await panelService.getInbounds(
-        server.panelUrl,
-        server.panelUsername,
-        decryptedPassword
-      );
+      const inbounds = await panelService.getInbounds(server.panelUrl, authConfig);
 
-      // Update server health status
       server.status = 'online';
       server.lastConnectedAt = new Date();
       server.inboundCount = inbounds.length;
@@ -285,7 +326,7 @@ router.get('/:id/inbounds', proxyLimiter, async (req, res) => {
 
 /**
  * GET /api/servers/:id/inbounds/:inboundId/clients
- * Fetch clients for that inbound live from the 3x-ui panel.
+ * Live inbound clients proxy.
  */
 router.get('/:id/inbounds/:inboundId/clients', proxyLimiter, async (req, res) => {
   try {
@@ -295,18 +336,12 @@ router.get('/:id/inbounds/:inboundId/clients', proxyLimiter, async (req, res) =>
       return res.status(404).json({ success: false, error: 'Server not found or access denied' });
     }
 
-    // Decrypt credentials in memory
-    const decryptedPassword = decrypt(
-      server.panelPasswordEncrypted,
-      server.panelPasswordIv,
-      server.panelPasswordAuthTag
-    );
+    const authConfig = getDecryptedAuthConfig(server);
 
     try {
       const clients = await panelService.getInboundClients(
         server.panelUrl,
-        server.panelUsername,
-        decryptedPassword,
+        authConfig,
         inboundId
       );
 
@@ -332,7 +367,7 @@ router.get('/:id/inbounds/:inboundId/clients', proxyLimiter, async (req, res) =>
 
 /**
  * POST /api/servers/:id/inbounds/:inboundId/clients
- * Add a new client to an inbound live on 3x-ui panel.
+ * Add client live on panel.
  */
 router.post('/:id/inbounds/:inboundId/clients', proxyLimiter, async (req, res) => {
   try {
@@ -347,11 +382,7 @@ router.post('/:id/inbounds/:inboundId/clients', proxyLimiter, async (req, res) =
       return res.status(400).json({ success: false, error: 'Client email is required' });
     }
 
-    const decryptedPassword = decrypt(
-      server.panelPasswordEncrypted,
-      server.panelPasswordIv,
-      server.panelPasswordAuthTag
-    );
+    const authConfig = getDecryptedAuthConfig(server);
 
     const crypto = require('crypto');
     const newClient = {
@@ -366,8 +397,7 @@ router.post('/:id/inbounds/:inboundId/clients', proxyLimiter, async (req, res) =
 
     const result = await panelService.addClient(
       server.panelUrl,
-      server.panelUsername,
-      decryptedPassword,
+      authConfig,
       inboundId,
       newClient
     );
@@ -388,7 +418,7 @@ router.post('/:id/inbounds/:inboundId/clients', proxyLimiter, async (req, res) =
 
 /**
  * PATCH /api/servers/:id/clients/:clientId
- * Update expiry/bandwidth/enabled on the 3x-ui panel live.
+ * Live client update.
  */
 router.patch('/:id/clients/:clientId', proxyLimiter, async (req, res) => {
   try {
@@ -399,19 +429,12 @@ router.patch('/:id/clients/:clientId', proxyLimiter, async (req, res) => {
     }
 
     const { expiryTime, totalGB, enable, email, inboundId } = req.body;
-
-    // Decrypt credentials in memory
-    const decryptedPassword = decrypt(
-      server.panelPasswordEncrypted,
-      server.panelPasswordIv,
-      server.panelPasswordAuthTag
-    );
+    const authConfig = getDecryptedAuthConfig(server);
 
     try {
       const result = await panelService.updateClient(
         server.panelUrl,
-        server.panelUsername,
-        decryptedPassword,
+        authConfig,
         clientId,
         {
           inboundId: inboundId || req.query.inboundId,
@@ -444,7 +467,7 @@ router.patch('/:id/clients/:clientId', proxyLimiter, async (req, res) => {
 
 /**
  * DELETE /api/servers/:id/clients/:clientId
- * Delete client live on 3x-ui panel.
+ * Live client deletion.
  */
 router.delete('/:id/clients/:clientId', proxyLimiter, async (req, res) => {
   try {
@@ -456,18 +479,12 @@ router.delete('/:id/clients/:clientId', proxyLimiter, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Server not found or access denied' });
     }
 
-    // Decrypt credentials in memory
-    const decryptedPassword = decrypt(
-      server.panelPasswordEncrypted,
-      server.panelPasswordIv,
-      server.panelPasswordAuthTag
-    );
+    const authConfig = getDecryptedAuthConfig(server);
 
     try {
       await panelService.deleteClient(
         server.panelUrl,
-        server.panelUsername,
-        decryptedPassword,
+        authConfig,
         clientId,
         inboundId
       );
@@ -493,7 +510,7 @@ router.delete('/:id/clients/:clientId', proxyLimiter, async (req, res) => {
 
 /**
  * POST /api/servers/:id/clients/:clientId/reset-traffic
- * Reset traffic for a client live on 3x-ui panel.
+ * Live client traffic reset.
  */
 router.post('/:id/clients/:clientId/reset-traffic', proxyLimiter, async (req, res) => {
   try {
@@ -505,18 +522,12 @@ router.post('/:id/clients/:clientId/reset-traffic', proxyLimiter, async (req, re
       return res.status(404).json({ success: false, error: 'Server not found or access denied' });
     }
 
-    // Decrypt credentials in memory
-    const decryptedPassword = decrypt(
-      server.panelPasswordEncrypted,
-      server.panelPasswordIv,
-      server.panelPasswordAuthTag
-    );
+    const authConfig = getDecryptedAuthConfig(server);
 
     try {
       const result = await panelService.resetClientTraffic(
         server.panelUrl,
-        server.panelUsername,
-        decryptedPassword,
+        authConfig,
         clientId,
         inboundId
       );

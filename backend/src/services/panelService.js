@@ -49,9 +49,9 @@ function mergeCookies(existingCookieStr = '', newSetCookieHeader = []) {
 }
 
 /**
- * Performs full CSRF-aware, subpath-aware authentication against 3x-ui panels.
+ * Performs full CSRF-aware, subpath-aware authentication against 3x-ui panels using username/password.
  */
-async function authenticate(panelUrl, username, password) {
+async function authenticateWithCredentials(panelUrl, username, password) {
   const base = normalizePanelUrl(panelUrl);
 
   let initialCookie = '';
@@ -176,18 +176,50 @@ async function authenticate(panelUrl, username, password) {
 }
 
 /**
- * Creates authenticated Axios instance for subsequent API queries.
+ * Normalizes input auth parameters into an object: { apiKey } OR { username, password }
  */
-function createClient(authContext) {
-  const { base, cookieHeader, csrfToken } = authContext;
+function resolveAuthConfig(authConfigOrUsername, password) {
+  if (typeof authConfigOrUsername === 'object' && authConfigOrUsername !== null) {
+    return authConfigOrUsername;
+  }
+  return { username: authConfigOrUsername, password };
+}
+
+/**
+ * Obtains an authenticated Axios instance supporting both API Token and Username/Password modes.
+ */
+async function getAuthenticatedClient(panelUrl, authConfig) {
+  const base = normalizePanelUrl(panelUrl);
+
+  // Strategy 1: Direct API Token Authentication (Sessionless & Fast)
+  if (authConfig.apiKey) {
+    const headers = {
+      Authorization: `Bearer ${authConfig.apiKey.trim()}`,
+      'User-Agent': 'PanelHub-Admin/1.0',
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest'
+    };
+    return {
+      client: axios.create({
+        baseURL: base,
+        headers,
+        httpsAgent: insecureHttpsAgent,
+        timeout: 15000
+      }),
+      base
+    };
+  }
+
+  // Strategy 2: Web Session Cookie Authentication (Username & Password)
+  const authContext = await authenticateWithCredentials(panelUrl, authConfig.username, authConfig.password);
   const headers = {
-    Cookie: cookieHeader,
+    Cookie: authContext.cookieHeader,
     'X-Requested-With': 'XMLHttpRequest',
     'User-Agent': 'PanelHub-Admin/1.0',
     'Content-Type': 'application/json'
   };
-  if (csrfToken) {
-    headers['X-CSRF-Token'] = csrfToken;
+  if (authContext.csrfToken) {
+    headers['X-CSRF-Token'] = authContext.csrfToken;
   }
 
   return {
@@ -204,9 +236,9 @@ function createClient(authContext) {
 /**
  * Tests live connection to 3x-ui panel.
  */
-async function testConnection(panelUrl, username, password) {
-  const authContext = await authenticate(panelUrl, username, password);
-  const { client } = createClient(authContext);
+async function testConnection(panelUrl, authConfigOrUsername, password) {
+  const authConfig = resolveAuthConfig(authConfigOrUsername, password);
+  const { client } = await getAuthenticatedClient(panelUrl, authConfig);
 
   const response = await client.get('panel/api/inbounds/list');
   if (!response.data?.success) {
@@ -223,9 +255,9 @@ async function testConnection(panelUrl, username, password) {
 /**
  * Fetches all inbounds live from 3x-ui panel.
  */
-async function getInbounds(panelUrl, username, password) {
-  const authContext = await authenticate(panelUrl, username, password);
-  const { client } = createClient(authContext);
+async function getInbounds(panelUrl, authConfigOrUsername, password) {
+  const authConfig = resolveAuthConfig(authConfigOrUsername, password);
+  const { client } = await getAuthenticatedClient(panelUrl, authConfig);
 
   const response = await client.get('panel/api/inbounds/list');
   if (!response.data?.success) {
@@ -267,9 +299,19 @@ async function getInbounds(panelUrl, username, password) {
 /**
  * Fetches clients for a specific inbound live from the 3x-ui panel.
  */
-async function getInboundClients(panelUrl, username, password, inboundId) {
-  const authContext = await authenticate(panelUrl, username, password);
-  const { client } = createClient(authContext);
+async function getInboundClients(panelUrl, authConfigOrUsername, passwordOrInboundId, maybeInboundId) {
+  let authConfig;
+  let inboundId;
+
+  if (typeof authConfigOrUsername === 'object' && authConfigOrUsername !== null) {
+    authConfig = authConfigOrUsername;
+    inboundId = passwordOrInboundId;
+  } else {
+    authConfig = { username: authConfigOrUsername, password: passwordOrInboundId };
+    inboundId = maybeInboundId;
+  }
+
+  const { client } = await getAuthenticatedClient(panelUrl, authConfig);
 
   const response = await client.get('panel/api/inbounds/list');
   if (!response.data?.success) {
@@ -354,11 +396,23 @@ async function findClientAcrossInbounds(panelClient, clientId) {
 
 /**
  * Updates client expiry, bandwidth quota (totalGB), or enabled status live.
- * Supports both modern 3x-ui (/panel/api/clients/update/:email) and classic (/panel/api/inbounds/updateClient/:clientId).
  */
-async function updateClient(panelUrl, username, password, clientId, updateData) {
-  const authContext = await authenticate(panelUrl, username, password);
-  const { client } = createClient(authContext);
+async function updateClient(panelUrl, authConfigOrUsername, passwordOrClientId, clientIdOrUpdateData, maybeUpdateData) {
+  let authConfig;
+  let clientId;
+  let updateData;
+
+  if (typeof authConfigOrUsername === 'object' && authConfigOrUsername !== null) {
+    authConfig = authConfigOrUsername;
+    clientId = passwordOrClientId;
+    updateData = clientIdOrUpdateData;
+  } else {
+    authConfig = { username: authConfigOrUsername, password: passwordOrClientId };
+    clientId = clientIdOrUpdateData;
+    updateData = maybeUpdateData;
+  }
+
+  const { client } = await getAuthenticatedClient(panelUrl, authConfig);
 
   let inboundId = updateData.inboundId;
   let targetClient = null;
@@ -371,7 +425,6 @@ async function updateClient(panelUrl, username, password, clientId, updateData) 
   inboundId = located.inbound.id;
   targetClient = located.client;
 
-  // Normalize data types for Go struct unmarshaling
   const updatedClientPayload = {
     ...targetClient,
     id: targetClient.id || clientId,
@@ -385,7 +438,7 @@ async function updateClient(panelUrl, username, password, clientId, updateData) 
 
   const clientIdentifier = targetClient.email || clientId;
 
-  // Try Strategy 1: Modern 3x-ui endpoint POST /panel/api/clients/update/:email
+  // Strategy 1: Modern 3x-ui endpoint POST /panel/api/clients/update/:email
   try {
     const modernRes = await client.post(`panel/api/clients/update/${encodeURIComponent(clientIdentifier)}`, updatedClientPayload);
     if (modernRes.data?.success) {
@@ -395,13 +448,12 @@ async function updateClient(panelUrl, username, password, clientId, updateData) 
       throw new Error(modernRes.data.msg);
     }
   } catch (err) {
-    // If not a 404, throw the error directly
     if (err.response && err.response.status !== 404) {
       throw new Error(err.response.data?.msg || err.message);
     }
   }
 
-  // Try Strategy 2: Classic 3x-ui endpoint POST /panel/api/inbounds/updateClient/:clientId
+  // Strategy 2: Classic 3x-ui endpoint POST /panel/api/inbounds/updateClient/:clientId
   const payload = {
     id: inboundId,
     settings: JSON.stringify({
@@ -422,11 +474,23 @@ async function updateClient(panelUrl, username, password, clientId, updateData) 
 
 /**
  * Deletes a client from an inbound live.
- * Supports both modern 3x-ui (/panel/api/clients/del/:email) and classic.
  */
-async function deleteClient(panelUrl, username, password, clientId, inboundId) {
-  const authContext = await authenticate(panelUrl, username, password);
-  const { client } = createClient(authContext);
+async function deleteClient(panelUrl, authConfigOrUsername, passwordOrClientId, clientIdOrInboundId, maybeInboundId) {
+  let authConfig;
+  let clientId;
+  let inboundId;
+
+  if (typeof authConfigOrUsername === 'object' && authConfigOrUsername !== null) {
+    authConfig = authConfigOrUsername;
+    clientId = passwordOrClientId;
+    inboundId = clientIdOrInboundId;
+  } else {
+    authConfig = { username: authConfigOrUsername, password: passwordOrClientId };
+    clientId = clientIdOrInboundId;
+    inboundId = maybeInboundId;
+  }
+
+  const { client } = await getAuthenticatedClient(panelUrl, authConfig);
 
   let resolvedInboundId = inboundId;
   let clientEmail = null;
@@ -439,7 +503,7 @@ async function deleteClient(panelUrl, username, password, clientId, inboundId) {
 
   const clientIdentifier = clientEmail || clientId;
 
-  // Try Strategy 1: Modern 3x-ui POST /panel/api/clients/del/:email
+  // Strategy 1: Modern 3x-ui POST /panel/api/clients/del/:email
   try {
     const modernRes = await client.post(`panel/api/clients/del/${encodeURIComponent(clientIdentifier)}`);
     if (modernRes.data?.success) {
@@ -451,7 +515,7 @@ async function deleteClient(panelUrl, username, password, clientId, inboundId) {
     }
   }
 
-  // Try Strategy 2: Classic 3x-ui POST /panel/api/inbounds/:inboundId/delClient/:clientId
+  // Strategy 2: Classic 3x-ui POST /panel/api/inbounds/:inboundId/delClient/:clientId
   try {
     const response = await client.post(`panel/api/inbounds/${resolvedInboundId}/delClient/${clientId}`);
     if (response.data?.success) {
@@ -472,11 +536,23 @@ async function deleteClient(panelUrl, username, password, clientId, inboundId) {
 
 /**
  * Resets client traffic counters live.
- * Supports both modern 3x-ui (/panel/api/clients/resetTraffic/:email) and classic.
  */
-async function resetClientTraffic(panelUrl, username, password, clientId, inboundId) {
-  const authContext = await authenticate(panelUrl, username, password);
-  const { client } = createClient(authContext);
+async function resetClientTraffic(panelUrl, authConfigOrUsername, passwordOrClientId, clientIdOrInboundId, maybeInboundId) {
+  let authConfig;
+  let clientId;
+  let inboundId;
+
+  if (typeof authConfigOrUsername === 'object' && authConfigOrUsername !== null) {
+    authConfig = authConfigOrUsername;
+    clientId = passwordOrClientId;
+    inboundId = clientIdOrInboundId;
+  } else {
+    authConfig = { username: authConfigOrUsername, password: passwordOrClientId };
+    clientId = clientIdOrInboundId;
+    inboundId = maybeInboundId;
+  }
+
+  const { client } = await getAuthenticatedClient(panelUrl, authConfig);
 
   let resolvedInboundId = inboundId;
   let clientEmail = null;
@@ -491,7 +567,7 @@ async function resetClientTraffic(panelUrl, username, password, clientId, inboun
 
   const clientIdentifier = clientEmail || clientId;
 
-  // Try Strategy 1: Modern 3x-ui POST /panel/api/clients/resetTraffic/:email
+  // Strategy 1: Modern 3x-ui POST /panel/api/clients/resetTraffic/:email
   try {
     const modernRes = await client.post(`panel/api/clients/resetTraffic/${encodeURIComponent(clientIdentifier)}`, {});
     if (modernRes.data?.success) {
@@ -503,7 +579,7 @@ async function resetClientTraffic(panelUrl, username, password, clientId, inboun
     }
   }
 
-  // Try Strategy 2: Classic 3x-ui POST /panel/api/inbounds/:inboundId/resetClientTraffic/:email
+  // Strategy 2: Classic 3x-ui POST /panel/api/inbounds/:inboundId/resetClientTraffic/:email
   try {
     const response = await client.post(
       `panel/api/inbounds/${resolvedInboundId}/resetClientTraffic/${encodeURIComponent(clientIdentifier)}`
@@ -528,9 +604,22 @@ async function resetClientTraffic(panelUrl, username, password, clientId, inboun
 /**
  * Adds a new client to an inbound live.
  */
-async function addClient(panelUrl, username, password, inboundId, clientData) {
-  const authContext = await authenticate(panelUrl, username, password);
-  const { client } = createClient(authContext);
+async function addClient(panelUrl, authConfigOrUsername, passwordOrInboundId, inboundIdOrClientData, maybeClientData) {
+  let authConfig;
+  let inboundId;
+  let clientData;
+
+  if (typeof authConfigOrUsername === 'object' && authConfigOrUsername !== null) {
+    authConfig = authConfigOrUsername;
+    inboundId = passwordOrInboundId;
+    clientData = inboundIdOrClientData;
+  } else {
+    authConfig = { username: authConfigOrUsername, password: passwordOrInboundId };
+    inboundId = inboundIdOrClientData;
+    clientData = maybeClientData;
+  }
+
+  const { client } = await getAuthenticatedClient(panelUrl, authConfig);
 
   const normalizedClient = {
     ...clientData,
@@ -541,7 +630,7 @@ async function addClient(panelUrl, username, password, inboundId, clientData) {
     inboundId: Number(inboundId)
   };
 
-  // Try Strategy 1: Modern 3x-ui POST /panel/api/clients/add
+  // Strategy 1: Modern 3x-ui POST /panel/api/clients/add
   try {
     const modernRes = await client.post('panel/api/clients/add', normalizedClient);
     if (modernRes.data?.success) {
@@ -553,7 +642,7 @@ async function addClient(panelUrl, username, password, inboundId, clientData) {
     }
   }
 
-  // Try Strategy 2: Classic 3x-ui POST /panel/api/inbounds/addClient
+  // Strategy 2: Classic 3x-ui POST /panel/api/inbounds/addClient
   const payload = {
     id: Number(inboundId),
     settings: JSON.stringify({
@@ -570,7 +659,8 @@ async function addClient(panelUrl, username, password, inboundId, clientData) {
 }
 
 module.exports = {
-  authenticate,
+  authenticate: authenticateWithCredentials,
+  getAuthenticatedClient,
   testConnection,
   getInbounds,
   getInboundClients,

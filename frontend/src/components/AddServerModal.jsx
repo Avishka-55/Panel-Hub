@@ -1,16 +1,19 @@
 import React, { useState } from 'react';
-import { X, Server, ShieldCheck, Key, Globe, User, Sparkles, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { X, Server, ShieldCheck, Key, Globe, User, Sparkles, AlertCircle, Loader2, Lock, Eye, EyeOff } from 'lucide-react';
 import { serversApi } from '../api/client';
 
 export default function AddServerModal({ isOpen, onClose, onServerAdded }) {
+  const [authType, setAuthType] = useState('api_key'); // 'api_key' | 'credentials'
   const [nickname, setNickname] = useState('');
   const [panelUrl, setPanelUrl] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
+
   const [panelUsername, setPanelUsername] = useState('');
   const [panelPassword, setPanelPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);
-  const [testLoading, setTestLoading] = useState(false);
-  const [testResult, setTestResult] = useState(null);
   const [error, setError] = useState(null);
 
   if (!isOpen) return null;
@@ -18,57 +21,51 @@ export default function AddServerModal({ isOpen, onClose, onServerAdded }) {
   const handleFillMock = () => {
     setNickname('Local 3x-ui Demo Panel');
     setPanelUrl('http://127.0.0.1:2053');
-    setPanelUsername('admin');
-    setPanelPassword('password123');
-    setTestResult(null);
-    setError(null);
-  };
-
-  const handleTestConnection = async () => {
-    if (!panelUrl || !panelUsername || !panelPassword) {
-      setError('Please provide Panel URL, Username, and Password to test.');
-      return;
+    if (authType === 'api_key') {
+      setApiKey('mock-api-key');
+    } else {
+      setPanelUsername('admin');
+      setPanelPassword('password123');
     }
-
-    setTestLoading(true);
-    setTestResult(null);
     setError(null);
-
-    try {
-      // Temporarily create or test using a lightweight probe
-      // In our platform, saving also tests connection. Here we test during save or preview.
-      const res = await fetch('/api/servers', {
-        method: 'HEAD'
-      });
-      // We'll let save handle full registration, or show tested state
-      setTestResult({
-        success: true,
-        message: 'Ready to encrypt and connect'
-      });
-    } catch (err) {
-      setError(err.message || 'Connection test failed');
-    } finally {
-      setTestLoading(false);
-    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!nickname.trim() || !panelUrl.trim() || !panelUsername.trim() || !panelPassword) {
-      setError('All fields are required.');
+    setError(null);
+
+    if (!nickname.trim() || !panelUrl.trim()) {
+      setError('Nickname and Panel URL are required.');
+      return;
+    }
+
+    if (authType === 'api_key' && !apiKey.trim()) {
+      setError('3x-ui API Key is required.');
+      return;
+    }
+
+    if (authType === 'credentials' && (!panelUsername.trim() || !panelPassword)) {
+      setError('Username and password are required.');
       return;
     }
 
     setLoading(true);
-    setError(null);
 
     try {
-      const res = await serversApi.add({
+      const payload = {
         nickname: nickname.trim(),
         panelUrl: panelUrl.trim(),
-        panelUsername: panelUsername.trim(),
-        panelPassword
-      });
+        authType
+      };
+
+      if (authType === 'api_key') {
+        payload.apiKey = apiKey.trim();
+      } else {
+        payload.panelUsername = panelUsername.trim();
+        payload.panelPassword = panelPassword;
+      }
+
+      const res = await serversApi.add(payload);
 
       if (res.success) {
         onServerAdded(res.server);
@@ -95,7 +92,7 @@ export default function AddServerModal({ isOpen, onClose, onServerAdded }) {
             </div>
             <div>
               <h3 className="text-base font-semibold text-white">Connect 3x-ui Panel</h3>
-              <p className="text-xs text-slate-400">Credentials will be encrypted with AES-256-GCM</p>
+              <p className="text-xs text-slate-400">Encrypted with AES-256-GCM • Never returned or exposed</p>
             </div>
           </div>
           <button
@@ -123,6 +120,40 @@ export default function AddServerModal({ isOpen, onClose, onServerAdded }) {
             </button>
           </div>
 
+          {/* Auth Method Selector */}
+          <div>
+            <label className="block text-xs font-medium text-slate-300 mb-1.5">
+              Authentication Method
+            </label>
+            <div className="grid grid-cols-2 gap-2 p-1 bg-slate-950/60 rounded-xl border border-slate-800">
+              <button
+                type="button"
+                onClick={() => setAuthType('api_key')}
+                className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
+                  authType === 'api_key'
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Key className="w-3.5 h-3.5" />
+                <span>3x-ui API Token</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAuthType('credentials')}
+                className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
+                  authType === 'credentials'
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>Username & Password</span>
+              </button>
+            </div>
+          </div>
+
           {error && (
             <div className="flex items-center gap-2 p-3 text-xs rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -137,7 +168,7 @@ export default function AddServerModal({ isOpen, onClose, onServerAdded }) {
             <input
               type="text"
               required
-              placeholder="e.g. US Virginia Core 01"
+              placeholder="e.g. Azure Singapore Gateway"
               value={nickname}
               onChange={(e) => setNickname(e.target.value)}
               className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700/80 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
@@ -155,56 +186,97 @@ export default function AddServerModal({ isOpen, onClose, onServerAdded }) {
               <input
                 type="text"
                 required
-                placeholder="http://192.168.1.100:2053 or https://vpn.domain.com:2053"
+                placeholder="https://52.237.119.11:45214/SFF3xGhBKgeMn7fl4X or http://ip:2053"
                 value={panelUrl}
                 onChange={(e) => setPanelUrl(e.target.value)}
                 className="w-full pl-9 pr-3.5 py-2.5 bg-slate-800/80 border border-slate-700/80 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
               />
             </div>
             <p className="mt-1 text-[11px] text-slate-500">
-              Include scheme (http:// or https://) and port. Self-signed SSL is supported.
+              Include scheme (http:// or https://) and any custom base path. Self-signed SSL is supported.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {authType === 'api_key' ? (
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                Panel Username
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
-                  <User className="w-4 h-4" />
-                </div>
-                <input
-                  type="text"
-                  required
-                  placeholder="admin"
-                  value={panelUsername}
-                  onChange={(e) => setPanelUsername(e.target.value)}
-                  className="w-full pl-9 pr-3.5 py-2.5 bg-slate-800/80 border border-slate-700/80 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
-                />
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-medium text-slate-300">
+                  3x-ui API Token
+                </label>
+                <span className="text-[10px] text-indigo-400 font-mono">Bearer Auth</span>
               </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                Panel Password
-              </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
                   <Key className="w-4 h-4" />
                 </div>
                 <input
-                  type="password"
+                  type={showApiKey ? 'text' : 'password'}
                   required
-                  placeholder="••••••••"
-                  value={panelPassword}
-                  onChange={(e) => setPanelPassword(e.target.value)}
-                  className="w-full pl-9 pr-3.5 py-2.5 bg-slate-800/80 border border-slate-700/80 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
+                  placeholder="Paste your 3x-ui API token..."
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  className="w-full pl-9 pr-10 py-2.5 bg-slate-800/80 border border-slate-700/80 rounded-xl text-sm text-white placeholder-slate-500 font-mono focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-white"
+                >
+                  {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Found in your 3x-ui panel under <strong>Settings → Security → API Tokens</strong>.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Panel Username
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                    <User className="w-4 h-4" />
+                  </div>
+                  <input
+                    type="text"
+                    required
+                    placeholder="admin"
+                    value={panelUsername}
+                    onChange={(e) => setPanelUsername(e.target.value)}
+                    className="w-full pl-9 pr-3.5 py-2.5 bg-slate-800/80 border border-slate-700/80 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Panel Password
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    placeholder="••••••••"
+                    value={panelPassword}
+                    onChange={(e) => setPanelPassword(e.target.value)}
+                    className="w-full pl-9 pr-10 py-2.5 bg-slate-800/80 border border-slate-700/80 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-white"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           <div className="pt-2 flex items-center justify-end gap-3 border-t border-slate-800">
             <button

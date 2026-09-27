@@ -2,15 +2,16 @@ const http = require('http');
 
 /**
  * Creates a standalone mock 3x-ui HTTP server for integration testing and local simulation.
- * Implements the exact endpoints:
- * - POST /login
+ * Implements:
+ * - Cookie session authentication (POST /login)
+ * - Bearer API Token authentication (Authorization: Bearer mock-api-key)
  * - GET /panel/api/inbounds/list
- * - POST /panel/api/inbounds/updateClient/:clientId
- * - POST /panel/api/inbounds/:id/delClient/:clientId
- * - POST /panel/api/inbounds/:id/resetClientTraffic/:email
- * - POST /panel/api/inbounds/addClient
+ * - POST /panel/api/clients/update/:clientId & POST /panel/api/inbounds/updateClient/:clientId
+ * - POST /panel/api/clients/del/:clientId & POST /panel/api/inbounds/:id/delClient/:clientId
+ * - POST /panel/api/clients/resetTraffic/:email & POST /panel/api/inbounds/:id/resetClientTraffic/:email
+ * - POST /panel/api/clients/add & POST /panel/api/inbounds/addClient
  */
-function createMock3xUiServer(port = 0, defaultUsername = 'admin', defaultPassword = 'password123') {
+function createMock3xUiServer(port = 0, defaultUsername = 'admin', defaultPassword = 'password123', defaultApiKey = 'mock-api-key') {
   let mockInbounds = [
     {
       id: 1,
@@ -138,8 +139,12 @@ function createMock3xUiServer(port = 0, defaultUsername = 'admin', defaultPasswo
       }
     }
 
-    // Auth check helper
+    // Auth check helper: supports session cookie OR Bearer API token
     const checkAuth = () => {
+      const authHeader = req.headers.authorization || '';
+      if (authHeader.startsWith('Bearer ') && authHeader.slice(7).trim() === defaultApiKey) {
+        return true;
+      }
       const cookieHeader = req.headers.cookie || '';
       return cookieHeader.includes('session=mock-3x-ui-session-token');
     };
@@ -159,10 +164,10 @@ function createMock3xUiServer(port = 0, defaultUsername = 'admin', defaultPasswo
       return res.end(JSON.stringify({ success: false, msg: 'Wrong username or password' }));
     }
 
-    // Require cookie for subsequent endpoints
+    // Require authentication for subsequent endpoints
     if (!checkAuth()) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ success: false, msg: 'Please log in' }));
+      return res.end(JSON.stringify({ success: false, msg: 'Please log in or provide valid API key' }));
     }
 
     // Route: GET /panel/api/inbounds/list
@@ -171,22 +176,25 @@ function createMock3xUiServer(port = 0, defaultUsername = 'admin', defaultPasswo
       return res.end(JSON.stringify({ success: true, msg: 'Inbounds fetched', obj: mockInbounds }));
     }
 
-    // Route: POST /panel/api/inbounds/updateClient/:clientId
-    const updateClientMatch = pathname.match(/^\/panel\/api\/inbounds\/updateClient\/(.+)$/);
-    if (updateClientMatch && req.method === 'POST') {
-      const clientId = decodeURIComponent(updateClientMatch[1]);
-      const inboundId = Number(parsedBody.id);
-      let updatedClientData = null;
+    // Route: POST /panel/api/clients/update/:clientId OR /panel/api/inbounds/updateClient/:clientId
+    const modernUpdateMatch = pathname.match(/^\/panel\/api\/clients\/update\/(.+)$/);
+    const classicUpdateMatch = pathname.match(/^\/panel\/api\/inbounds\/updateClient\/(.+)$/);
 
-      try {
-        const clientSettings = typeof parsedBody.settings === 'string'
-          ? JSON.parse(parsedBody.settings)
-          : parsedBody.settings;
-        updatedClientData = clientSettings?.clients?.[0];
-      } catch (_) {}
+    if ((modernUpdateMatch || classicUpdateMatch) && req.method === 'POST') {
+      const clientId = decodeURIComponent((modernUpdateMatch || classicUpdateMatch)[1]);
+      let updatedClientData = parsedBody;
 
-      const inbound = mockInbounds.find((ib) => ib.id === inboundId);
-      if (inbound && updatedClientData) {
+      // In classic mode, settings is serialized
+      if (parsedBody.settings) {
+        try {
+          const clientSettings = typeof parsedBody.settings === 'string'
+            ? JSON.parse(parsedBody.settings)
+            : parsedBody.settings;
+          updatedClientData = clientSettings?.clients?.[0] || parsedBody;
+        } catch (_) {}
+      }
+
+      for (const inbound of mockInbounds) {
         const currentSettings = JSON.parse(inbound.settings);
         const idx = currentSettings.clients.findIndex(
           (c) => String(c.id) === clientId || String(c.password) === clientId || String(c.email) === clientId
@@ -196,7 +204,6 @@ function createMock3xUiServer(port = 0, defaultUsername = 'admin', defaultPasswo
           currentSettings.clients[idx] = { ...currentSettings.clients[idx], ...updatedClientData };
           inbound.settings = JSON.stringify(currentSettings);
 
-          // Update stats if needed
           const stat = inbound.clientStats?.find(
             (s) => s.email === currentSettings.clients[idx].email || String(s.id) === clientId
           );
@@ -215,14 +222,14 @@ function createMock3xUiServer(port = 0, defaultUsername = 'admin', defaultPasswo
       return res.end(JSON.stringify({ success: false, msg: 'Client not found or update failed' }));
     }
 
-    // Route: POST /panel/api/inbounds/:id/delClient/:clientId
-    const delClientMatch = pathname.match(/^\/panel\/api\/inbounds\/(\d+)\/delClient\/(.+)$/);
-    if (delClientMatch && req.method === 'POST') {
-      const inboundId = Number(delClientMatch[1]);
-      const clientId = decodeURIComponent(delClientMatch[2]);
+    // Route: POST /panel/api/clients/del/:clientId OR /panel/api/inbounds/:id/delClient/:clientId
+    const modernDelMatch = pathname.match(/^\/panel\/api\/clients\/del\/(.+)$/);
+    const classicDelMatch = pathname.match(/^\/panel\/api\/inbounds\/(\d+)\/delClient\/(.+)$/);
 
-      const inbound = mockInbounds.find((ib) => ib.id === inboundId);
-      if (inbound) {
+    if ((modernDelMatch || classicDelMatch) && req.method === 'POST') {
+      const clientId = decodeURIComponent(modernDelMatch ? modernDelMatch[1] : classicDelMatch[2]);
+
+      for (const inbound of mockInbounds) {
         const currentSettings = JSON.parse(inbound.settings);
         const client = currentSettings.clients.find(
           (c) => String(c.id) === clientId || String(c.password) === clientId || String(c.email) === clientId
@@ -235,58 +242,67 @@ function createMock3xUiServer(port = 0, defaultUsername = 'admin', defaultPasswo
           return res.end(JSON.stringify({ success: true, msg: 'Client deleted' }));
         }
       }
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ success: false, msg: 'Client or inbound not found' }));
     }
 
-    // Route: POST /panel/api/inbounds/:id/resetClientTraffic/:email
-    const resetTrafficMatch = pathname.match(/^\/panel\/api\/inbounds\/(\d+)\/resetClientTraffic\/(.+)$/);
-    if (resetTrafficMatch && req.method === 'POST') {
-      const inboundId = Number(resetTrafficMatch[1]);
-      const email = decodeURIComponent(resetTrafficMatch[2]);
+    // Route: POST /panel/api/clients/resetTraffic/:email OR /panel/api/inbounds/:id/resetClientTraffic/:email
+    const modernResetMatch = pathname.match(/^\/panel\/api\/clients\/resetTraffic\/(.+)$/);
+    const classicResetMatch = pathname.match(/^\/panel\/api\/inbounds\/(\d+)\/resetClientTraffic\/(.+)$/);
 
-      const inbound = mockInbounds.find((ib) => ib.id === inboundId);
-      if (inbound && inbound.clientStats) {
-        const stat = inbound.clientStats.find((s) => s.email === email);
-        if (stat) {
-          stat.up = 0;
-          stat.down = 0;
-          stat.reset = (stat.reset || 0) + 1;
+    if ((modernResetMatch || classicResetMatch) && req.method === 'POST') {
+      const email = decodeURIComponent(modernResetMatch ? modernResetMatch[1] : classicResetMatch[2]);
+
+      for (const inbound of mockInbounds) {
+        if (inbound.clientStats) {
+          const stat = inbound.clientStats.find((s) => s.email === email || String(s.id) === email);
+          if (stat) {
+            stat.up = 0;
+            stat.down = 0;
+            stat.reset = (stat.reset || 0) + 1;
+          }
         }
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ success: true, msg: 'Client traffic reset' }));
     }
 
-    // Route: POST /panel/api/inbounds/addClient
-    if (pathname === '/panel/api/inbounds/addClient' && req.method === 'POST') {
-      const inboundId = Number(parsedBody.id);
-      const inbound = mockInbounds.find((ib) => ib.id === inboundId);
-      if (inbound) {
-        const clientSettings = typeof parsedBody.settings === 'string'
-          ? JSON.parse(parsedBody.settings)
-          : parsedBody.settings;
-        const newClient = clientSettings?.clients?.[0];
-        if (newClient) {
-          const currentSettings = JSON.parse(inbound.settings);
-          currentSettings.clients.push(newClient);
-          inbound.settings = JSON.stringify(currentSettings);
-          inbound.clientStats = inbound.clientStats || [];
-          inbound.clientStats.push({
-            id: inbound.clientStats.length + 1,
-            inboundId,
-            enable: newClient.enable !== false,
-            email: newClient.email,
-            up: 0,
-            down: 0,
-            expiryTime: newClient.expiryTime || 0,
-            total: newClient.totalGB || 0,
-            reset: 0
-          });
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ success: true, msg: 'Client added' }));
-        }
+    // Route: POST /panel/api/clients/add OR /panel/api/inbounds/addClient
+    if ((pathname === '/panel/api/clients/add' || pathname === '/panel/api/inbounds/addClient') && req.method === 'POST') {
+      let inboundId = Number(parsedBody.inboundId || parsedBody.id || 1);
+      let newClient = parsedBody;
+
+      if (parsedBody.settings) {
+        try {
+          const clientSettings = typeof parsedBody.settings === 'string'
+            ? JSON.parse(parsedBody.settings)
+            : parsedBody.settings;
+          newClient = clientSettings?.clients?.[0] || newClient;
+        } catch (_) {}
       }
+
+      const inbound = mockInbounds.find((ib) => ib.id === inboundId);
+      if (inbound && newClient) {
+        const currentSettings = JSON.parse(inbound.settings);
+        currentSettings.clients.push(newClient);
+        inbound.settings = JSON.stringify(currentSettings);
+        inbound.clientStats = inbound.clientStats || [];
+        inbound.clientStats.push({
+          id: inbound.clientStats.length + 1,
+          inboundId,
+          enable: newClient.enable !== false,
+          email: newClient.email,
+          up: 0,
+          down: 0,
+          expiryTime: newClient.expiryTime || 0,
+          total: newClient.totalGB || 0,
+          reset: 0
+        });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ success: true, msg: 'Client added' }));
+      }
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ success: false, msg: 'Failed to add client' }));
     }
@@ -306,6 +322,7 @@ function createMock3xUiServer(port = 0, defaultUsername = 'admin', defaultPasswo
         url: `http://127.0.0.1:${actualPort}`,
         username: defaultUsername,
         password: defaultPassword,
+        apiKey: defaultApiKey,
         close: () => new Promise((cb) => server.close(cb))
       });
     });

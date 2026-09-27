@@ -249,12 +249,26 @@ export default function DashboardPage({ onSelectServer }) {
                             Untested
                           </span>
                         )}
+
+                        {server.authType === 'api_key' ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                            API Token
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+                            Password
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-xs text-slate-400">
                         <span className="font-mono text-slate-300">{server.panelUrl}</span>
                         <span>•</span>
-                        <span>User: <strong className="text-slate-300">{server.panelUsername}</strong></span>
+                        {server.authType === 'api_key' ? (
+                          <span>Auth: <strong className="text-indigo-400">Bearer Token</strong></span>
+                        ) : (
+                          <span>User: <strong className="text-slate-300">{server.panelUsername}</strong></span>
+                        )}
                         <span>•</span>
                         <span>
                           Inbounds: <strong className="text-slate-200">{server.inboundCount || 0}</strong>
