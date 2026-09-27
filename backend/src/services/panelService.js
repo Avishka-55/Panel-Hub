@@ -24,7 +24,6 @@ function normalizePanelUrl(url) {
 function mergeCookies(existingCookieStr = '', newSetCookieHeader = []) {
   const cookieMap = new Map();
 
-  // Parse existing cookies
   if (existingCookieStr) {
     existingCookieStr.split(';').forEach((part) => {
       const trimmed = part.trim();
@@ -35,7 +34,6 @@ function mergeCookies(existingCookieStr = '', newSetCookieHeader = []) {
     });
   }
 
-  // Parse new set-cookie headers
   if (newSetCookieHeader) {
     const arr = Array.isArray(newSetCookieHeader) ? newSetCookieHeader : [newSetCookieHeader];
     arr.forEach((headerVal) => {
@@ -52,10 +50,6 @@ function mergeCookies(existingCookieStr = '', newSetCookieHeader = []) {
 
 /**
  * Performs full CSRF-aware, subpath-aware authentication against 3x-ui panels.
- * Supports:
- * - New 3x-ui versions with CSRF tokens and webBasePaths
- * - Older 3x-ui versions with JSON /login
- * - Form-urlencoded login payloads
  */
 async function authenticate(panelUrl, username, password) {
   const base = normalizePanelUrl(panelUrl);
@@ -136,7 +130,6 @@ async function authenticate(panelUrl, username, password) {
       };
     }
 
-    // If explicit invalid username/password message returned
     if (loginRes.data && loginRes.data.success === false && loginRes.data.msg) {
       throw new Error(`Authentication failed on 3x-ui panel: ${loginRes.data.msg}`);
     }
@@ -213,7 +206,7 @@ function createClient(authContext) {
  */
 async function testConnection(panelUrl, username, password) {
   const authContext = await authenticate(panelUrl, username, password);
-  const { client, base } = createClient(authContext);
+  const { client } = createClient(authContext);
 
   const response = await client.get('panel/api/inbounds/list');
   if (!response.data?.success) {
@@ -361,6 +354,7 @@ async function findClientAcrossInbounds(panelClient, clientId) {
 
 /**
  * Updates client expiry, bandwidth quota (totalGB), or enabled status live.
+ * Supports both modern 3x-ui (/panel/api/clients/update/:email) and classic (/panel/api/inbounds/updateClient/:clientId).
  */
 async function updateClient(panelUrl, username, password, clientId, updateData) {
   const authContext = await authenticate(panelUrl, username, password);
@@ -377,15 +371,37 @@ async function updateClient(panelUrl, username, password, clientId, updateData) 
   inboundId = located.inbound.id;
   targetClient = located.client;
 
+  // Normalize data types for Go struct unmarshaling
   const updatedClientPayload = {
     ...targetClient,
     id: targetClient.id || clientId,
     email: updateData.email !== undefined ? updateData.email : targetClient.email,
     enable: updateData.enable !== undefined ? Boolean(updateData.enable) : Boolean(targetClient.enable),
-    totalGB: updateData.totalGB !== undefined ? Number(updateData.totalGB) : (targetClient.totalGB || 0),
-    expiryTime: updateData.expiryTime !== undefined ? Number(updateData.expiryTime) : (targetClient.expiryTime || 0)
+    totalGB: updateData.totalGB !== undefined ? Number(updateData.totalGB) : (Number(targetClient.totalGB) || 0),
+    expiryTime: updateData.expiryTime !== undefined ? Number(updateData.expiryTime) : (Number(targetClient.expiryTime) || 0),
+    limitIp: Number(targetClient.limitIp) || 0,
+    tgId: typeof targetClient.tgId === 'string' ? (Number(targetClient.tgId) || 0) : (targetClient.tgId || 0)
   };
 
+  const clientIdentifier = targetClient.email || clientId;
+
+  // Try Strategy 1: Modern 3x-ui endpoint POST /panel/api/clients/update/:email
+  try {
+    const modernRes = await client.post(`panel/api/clients/update/${encodeURIComponent(clientIdentifier)}`, updatedClientPayload);
+    if (modernRes.data?.success) {
+      return { success: true, client: updatedClientPayload };
+    }
+    if (modernRes.data?.msg) {
+      throw new Error(modernRes.data.msg);
+    }
+  } catch (err) {
+    // If not a 404, throw the error directly
+    if (err.response && err.response.status !== 404) {
+      throw new Error(err.response.data?.msg || err.message);
+    }
+  }
+
+  // Try Strategy 2: Classic 3x-ui endpoint POST /panel/api/inbounds/updateClient/:clientId
   const payload = {
     id: inboundId,
     settings: JSON.stringify({
@@ -393,7 +409,7 @@ async function updateClient(panelUrl, username, password, clientId, updateData) 
     })
   };
 
-  const response = await client.post(`panel/api/inbounds/updateClient/${clientId}`, payload);
+  const response = await client.post(`panel/api/inbounds/updateClient/${encodeURIComponent(clientId)}`, payload);
   if (!response.data?.success) {
     throw new Error(response.data?.msg || 'Failed to update client on 3x-ui panel');
   }
@@ -406,20 +422,36 @@ async function updateClient(panelUrl, username, password, clientId, updateData) 
 
 /**
  * Deletes a client from an inbound live.
+ * Supports both modern 3x-ui (/panel/api/clients/del/:email) and classic.
  */
 async function deleteClient(panelUrl, username, password, clientId, inboundId) {
   const authContext = await authenticate(panelUrl, username, password);
   const { client } = createClient(authContext);
 
   let resolvedInboundId = inboundId;
-  if (!resolvedInboundId) {
-    const located = await findClientAcrossInbounds(client, clientId);
-    if (!located) {
-      throw new Error(`Client "${clientId}" not found on this panel`);
-    }
+  let clientEmail = null;
+
+  const located = await findClientAcrossInbounds(client, clientId);
+  if (located) {
     resolvedInboundId = located.inbound.id;
+    clientEmail = located.client.email;
   }
 
+  const clientIdentifier = clientEmail || clientId;
+
+  // Try Strategy 1: Modern 3x-ui POST /panel/api/clients/del/:email
+  try {
+    const modernRes = await client.post(`panel/api/clients/del/${encodeURIComponent(clientIdentifier)}`);
+    if (modernRes.data?.success) {
+      return { success: true };
+    }
+  } catch (err) {
+    if (err.response && err.response.status !== 404) {
+      throw new Error(err.response.data?.msg || err.message);
+    }
+  }
+
+  // Try Strategy 2: Classic 3x-ui POST /panel/api/inbounds/:inboundId/delClient/:clientId
   try {
     const response = await client.post(`panel/api/inbounds/${resolvedInboundId}/delClient/${clientId}`);
     if (response.data?.success) {
@@ -440,6 +472,7 @@ async function deleteClient(panelUrl, username, password, clientId, inboundId) {
 
 /**
  * Resets client traffic counters live.
+ * Supports both modern 3x-ui (/panel/api/clients/resetTraffic/:email) and classic.
  */
 async function resetClientTraffic(panelUrl, username, password, clientId, inboundId) {
   const authContext = await authenticate(panelUrl, username, password);
@@ -456,25 +489,36 @@ async function resetClientTraffic(panelUrl, username, password, clientId, inboun
     clientEmail = clientId;
   }
 
-  if (!clientEmail) {
-    throw new Error(`Cannot reset traffic: unable to resolve client email for "${clientId}"`);
+  const clientIdentifier = clientEmail || clientId;
+
+  // Try Strategy 1: Modern 3x-ui POST /panel/api/clients/resetTraffic/:email
+  try {
+    const modernRes = await client.post(`panel/api/clients/resetTraffic/${encodeURIComponent(clientIdentifier)}`, {});
+    if (modernRes.data?.success) {
+      return { success: true, email: clientIdentifier };
+    }
+  } catch (err) {
+    if (err.response && err.response.status !== 404) {
+      throw new Error(err.response.data?.msg || err.message);
+    }
   }
 
+  // Try Strategy 2: Classic 3x-ui POST /panel/api/inbounds/:inboundId/resetClientTraffic/:email
   try {
     const response = await client.post(
-      `panel/api/inbounds/${resolvedInboundId}/resetClientTraffic/${encodeURIComponent(clientEmail)}`
+      `panel/api/inbounds/${resolvedInboundId}/resetClientTraffic/${encodeURIComponent(clientIdentifier)}`
     );
     if (response.data?.success) {
-      return { success: true, email: clientEmail };
+      return { success: true, email: clientIdentifier };
     }
     throw new Error(response.data?.msg || 'Failed to reset client traffic');
   } catch (err) {
     try {
       const altResponse = await client.post(
-        `panel/api/inbounds/resetClientTraffic/${encodeURIComponent(clientEmail)}`
+        `panel/api/inbounds/resetClientTraffic/${encodeURIComponent(clientIdentifier)}`
       );
       if (altResponse.data?.success) {
-        return { success: true, email: clientEmail };
+        return { success: true, email: clientIdentifier };
       }
     } catch (_) {}
     throw new Error(err.response?.data?.msg || err.message || 'Failed to reset client traffic');
@@ -488,10 +532,32 @@ async function addClient(panelUrl, username, password, inboundId, clientData) {
   const authContext = await authenticate(panelUrl, username, password);
   const { client } = createClient(authContext);
 
+  const normalizedClient = {
+    ...clientData,
+    limitIp: Number(clientData.limitIp) || 0,
+    totalGB: Number(clientData.totalGB) || 0,
+    expiryTime: Number(clientData.expiryTime) || 0,
+    tgId: 0,
+    inboundId: Number(inboundId)
+  };
+
+  // Try Strategy 1: Modern 3x-ui POST /panel/api/clients/add
+  try {
+    const modernRes = await client.post('panel/api/clients/add', normalizedClient);
+    if (modernRes.data?.success) {
+      return { success: true, client: normalizedClient };
+    }
+  } catch (err) {
+    if (err.response && err.response.status !== 404) {
+      throw new Error(err.response.data?.msg || err.message);
+    }
+  }
+
+  // Try Strategy 2: Classic 3x-ui POST /panel/api/inbounds/addClient
   const payload = {
     id: Number(inboundId),
     settings: JSON.stringify({
-      clients: [clientData]
+      clients: [normalizedClient]
     })
   };
 
@@ -500,7 +566,7 @@ async function addClient(panelUrl, username, password, inboundId, clientData) {
     throw new Error(response.data?.msg || 'Failed to add client to inbound');
   }
 
-  return { success: true, client: clientData };
+  return { success: true, client: normalizedClient };
 }
 
 module.exports = {
