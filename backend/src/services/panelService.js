@@ -7,112 +7,215 @@ const insecureHttpsAgent = new https.Agent({
 });
 
 /**
- * Normalizes a panel URL by trimming trailing slashes and spaces.
+ * Normalizes panel URL, ensuring trailing slash for base-path compatibility.
  */
-function normalizeUrl(url) {
+function normalizePanelUrl(url) {
   if (!url) return '';
   let cleaned = url.trim();
-  while (cleaned.endsWith('/')) {
-    cleaned = cleaned.slice(0, -1);
+  if (!cleaned.endsWith('/')) {
+    cleaned += '/';
   }
   return cleaned;
 }
 
 /**
- * Logs into the 3x-ui panel and returns a cookie header string.
+ * Merges cookie strings, giving precedence to newer cookies for the same key.
+ */
+function mergeCookies(existingCookieStr = '', newSetCookieHeader = []) {
+  const cookieMap = new Map();
+
+  // Parse existing cookies
+  if (existingCookieStr) {
+    existingCookieStr.split(';').forEach((part) => {
+      const trimmed = part.trim();
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx !== -1) {
+        cookieMap.set(trimmed.slice(0, eqIdx), trimmed);
+      }
+    });
+  }
+
+  // Parse new set-cookie headers
+  if (newSetCookieHeader) {
+    const arr = Array.isArray(newSetCookieHeader) ? newSetCookieHeader : [newSetCookieHeader];
+    arr.forEach((headerVal) => {
+      const cookiePart = headerVal.split(';')[0].trim();
+      const eqIdx = cookiePart.indexOf('=');
+      if (eqIdx !== -1) {
+        cookieMap.set(cookiePart.slice(0, eqIdx), cookiePart);
+      }
+    });
+  }
+
+  return Array.from(cookieMap.values()).join('; ');
+}
+
+/**
+ * Performs full CSRF-aware, subpath-aware authentication against 3x-ui panels.
+ * Supports:
+ * - New 3x-ui versions with CSRF tokens and webBasePaths
+ * - Older 3x-ui versions with JSON /login
+ * - Form-urlencoded login payloads
  */
 async function authenticate(panelUrl, username, password) {
-  const cleanUrl = normalizeUrl(panelUrl);
-  const loginUrl = `${cleanUrl}/login`;
+  const base = normalizePanelUrl(panelUrl);
+
+  let initialCookie = '';
+  let csrfToken = '';
+
+  // 1. Fetch initial landing page to capture session cookies and CSRF meta token
+  try {
+    const initRes = await axios.get(base, {
+      httpsAgent: insecureHttpsAgent,
+      timeout: 10000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      },
+      validateStatus: () => true
+    });
+
+    initialCookie = mergeCookies('', initRes.headers['set-cookie']);
+
+    if (typeof initRes.data === 'string') {
+      const match = initRes.data.match(/name="csrf-token" content="([^"]+)"/);
+      if (match) {
+        csrfToken = match[1];
+      }
+    }
+  } catch (err) {
+    console.warn(`[3x-ui initial probe warning]: ${err.message}`);
+  }
+
+  // If CSRF token wasn't in HTML meta, try /csrf-token endpoint
+  if (!csrfToken && initialCookie) {
+    try {
+      const csrfRes = await axios.get(`${base}csrf-token`, {
+        httpsAgent: insecureHttpsAgent,
+        timeout: 5000,
+        headers: {
+          Cookie: initialCookie,
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        validateStatus: () => true
+      });
+      if (csrfRes.data?.success && typeof csrfRes.data.obj === 'string') {
+        csrfToken = csrfRes.data.obj;
+      }
+    } catch (_) {}
+  }
+
+  // 2. Perform Login POST
+  // Strategy A: URL-encoded with CSRF token (Standard in newer 3x-ui)
+  const formParams = new URLSearchParams();
+  formParams.append('username', username);
+  formParams.append('password', password);
+  formParams.append('twoFactorCode', '');
+
+  const headersA = {
+    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+    'X-Requested-With': 'XMLHttpRequest',
+    'User-Agent': 'PanelHub-Admin/1.0'
+  };
+  if (initialCookie) headersA['Cookie'] = initialCookie;
+  if (csrfToken) headersA['X-CSRF-Token'] = csrfToken;
 
   try {
-    const response = await axios.post(
-      loginUrl,
+    const loginRes = await axios.post(`${base}login`, formParams.toString(), {
+      headers: headersA,
+      httpsAgent: insecureHttpsAgent,
+      timeout: 12000,
+      validateStatus: () => true
+    });
+
+    if (loginRes.status === 200 && loginRes.data?.success) {
+      const finalCookie = mergeCookies(initialCookie, loginRes.headers['set-cookie']);
+      return {
+        base,
+        cookieHeader: finalCookie,
+        csrfToken
+      };
+    }
+
+    // If explicit invalid username/password message returned
+    if (loginRes.data && loginRes.data.success === false && loginRes.data.msg) {
+      throw new Error(`Authentication failed on 3x-ui panel: ${loginRes.data.msg}`);
+    }
+
+    // Strategy B: JSON POST (standard in older 3x-ui versions or root login)
+    const headersB = {
+      'Content-Type': 'application/json',
+      'User-Agent': 'PanelHub-Admin/1.0'
+    };
+    if (initialCookie) headersB['Cookie'] = initialCookie;
+    if (csrfToken) headersB['X-CSRF-Token'] = csrfToken;
+
+    const jsonRes = await axios.post(
+      `${base}login`,
       { username, password },
       {
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'PanelHub-Admin/1.0'
-        },
+        headers: headersB,
         httpsAgent: insecureHttpsAgent,
-        timeout: 10000,
-        validateStatus: (status) => status < 500
+        timeout: 12000,
+        validateStatus: () => true
       }
     );
 
-    if (response.status !== 200 || !response.data?.success) {
-      // Some versions of x-ui accept URL-encoded form data instead of JSON
-      const formParams = new URLSearchParams();
-      formParams.append('username', username);
-      formParams.append('password', password);
-
-      const formResponse = await axios.post(loginUrl, formParams, {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'User-Agent': 'PanelHub-Admin/1.0'
-        },
-        httpsAgent: insecureHttpsAgent,
-        timeout: 10000,
-        validateStatus: (status) => status < 500
-      });
-
-      if (formResponse.status !== 200 || !formResponse.data?.success) {
-        const errorMsg = formResponse.data?.msg || response.data?.msg || 'Invalid panel username or password';
-        throw new Error(`Authentication failed on 3x-ui panel: ${errorMsg}`);
-      }
-
-      return extractCookies(formResponse.headers['set-cookie']);
+    if (jsonRes.status === 200 && jsonRes.data?.success) {
+      const finalCookie = mergeCookies(initialCookie, jsonRes.headers['set-cookie']);
+      return {
+        base,
+        cookieHeader: finalCookie,
+        csrfToken
+      };
     }
 
-    return extractCookies(response.headers['set-cookie']);
+    const errorMsg = jsonRes.data?.msg || loginRes.data?.msg || 'Invalid panel username or password';
+    throw new Error(`Authentication failed on 3x-ui panel: ${errorMsg}`);
   } catch (error) {
-    if (error.response?.data?.msg) {
-      throw new Error(`3x-ui login rejected: ${error.response.data.msg}`);
-    }
     if (error.code === 'ECONNREFUSED') {
-      throw new Error(`Connection refused at ${cleanUrl}. Check IP and port.`);
+      throw new Error(`Connection refused at ${base}. Please check IP and port.`);
     }
     if (error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED') {
-      throw new Error(`Connection to 3x-ui panel timed out at ${cleanUrl}.`);
+      throw new Error(`Connection to 3x-ui panel timed out at ${base}.`);
     }
-    throw new Error(error.message || 'Failed to authenticate with 3x-ui panel');
+    throw error;
   }
 }
 
 /**
- * Extracts and formats cookie string from set-cookie headers.
+ * Creates authenticated Axios instance for subsequent API queries.
  */
-function extractCookies(setCookieHeader) {
-  if (!setCookieHeader) return '';
-  const cookies = Array.isArray(setCookieHeader) ? setCookieHeader : [setCookieHeader];
-  return cookies.map((c) => c.split(';')[0]).join('; ');
+function createClient(authContext) {
+  const { base, cookieHeader, csrfToken } = authContext;
+  const headers = {
+    Cookie: cookieHeader,
+    'X-Requested-With': 'XMLHttpRequest',
+    'User-Agent': 'PanelHub-Admin/1.0',
+    'Content-Type': 'application/json'
+  };
+  if (csrfToken) {
+    headers['X-CSRF-Token'] = csrfToken;
+  }
+
+  return {
+    client: axios.create({
+      baseURL: base,
+      headers,
+      httpsAgent: insecureHttpsAgent,
+      timeout: 15000
+    }),
+    base
+  };
 }
 
 /**
- * Creates an authenticated Axios instance for communicating with a panel.
- */
-function createPanelClient(panelUrl, cookieHeader) {
-  const cleanUrl = normalizeUrl(panelUrl);
-  return axios.create({
-    baseURL: cleanUrl,
-    headers: {
-      Cookie: cookieHeader,
-      'Content-Type': 'application/json',
-      'User-Agent': 'PanelHub-Admin/1.0'
-    },
-    httpsAgent: insecureHttpsAgent,
-    timeout: 15000
-  });
-}
-
-/**
- * Tests connection to a 3x-ui panel.
+ * Tests live connection to 3x-ui panel.
  */
 async function testConnection(panelUrl, username, password) {
-  const cookie = await authenticate(panelUrl, username, password);
-  const client = createPanelClient(panelUrl, cookie);
+  const authContext = await authenticate(panelUrl, username, password);
+  const { client, base } = createClient(authContext);
 
-  const response = await client.get('/panel/api/inbounds/list');
+  const response = await client.get('panel/api/inbounds/list');
   if (!response.data?.success) {
     throw new Error(response.data?.msg || 'Failed to retrieve inbounds list from panel');
   }
@@ -125,13 +228,13 @@ async function testConnection(panelUrl, username, password) {
 }
 
 /**
- * Fetches all inbounds from a 3x-ui panel.
+ * Fetches all inbounds live from 3x-ui panel.
  */
 async function getInbounds(panelUrl, username, password) {
-  const cookie = await authenticate(panelUrl, username, password);
-  const client = createPanelClient(panelUrl, cookie);
+  const authContext = await authenticate(panelUrl, username, password);
+  const { client } = createClient(authContext);
 
-  const response = await client.get('/panel/api/inbounds/list');
+  const response = await client.get('panel/api/inbounds/list');
   if (!response.data?.success) {
     throw new Error(response.data?.msg || 'Failed to retrieve inbounds from 3x-ui panel');
   }
@@ -172,11 +275,10 @@ async function getInbounds(panelUrl, username, password) {
  * Fetches clients for a specific inbound live from the 3x-ui panel.
  */
 async function getInboundClients(panelUrl, username, password, inboundId) {
-  const cookie = await authenticate(panelUrl, username, password);
-  const client = createPanelClient(panelUrl, cookie);
+  const authContext = await authenticate(panelUrl, username, password);
+  const { client } = createClient(authContext);
 
-  // Fetch inbounds to locate the specific inbound and its client settings
-  const response = await client.get('/panel/api/inbounds/list');
+  const response = await client.get('panel/api/inbounds/list');
   if (!response.data?.success) {
     throw new Error(response.data?.msg || 'Failed to retrieve inbounds list');
   }
@@ -188,7 +290,6 @@ async function getInboundClients(panelUrl, username, password, inboundId) {
     throw new Error(`Inbound with ID "${inboundId}" not found on this 3x-ui panel`);
   }
 
-  // Parse settings to get clients list
   let clients = [];
   try {
     const parsedSettings = typeof targetInbound.settings === 'string'
@@ -201,7 +302,6 @@ async function getInboundClients(panelUrl, username, password, inboundId) {
     throw new Error(`Failed to parse inbound settings: ${err.message}`);
   }
 
-  // Extract client stats from inbound (clientStats array)
   const clientStats = targetInbound.clientStats || [];
   const statsMap = new Map();
   for (const stat of clientStats) {
@@ -212,7 +312,7 @@ async function getInboundClients(panelUrl, username, password, inboundId) {
   return clients.map((c) => {
     const stat = statsMap.get(c.email) || statsMap.get(String(c.id)) || {};
     return {
-      id: c.id || c.password || c.email, // VMESS/VLESS uses UUID id, Trojan uses password, Shadowsocks uses email
+      id: c.id || c.password || c.email,
       email: c.email || 'unnamed',
       enable: c.enable !== undefined ? Boolean(c.enable) : true,
       totalGB: c.totalGB !== undefined ? c.totalGB : (stat.total || 0),
@@ -233,7 +333,7 @@ async function getInboundClients(panelUrl, username, password, inboundId) {
  * Finds an inbound containing the specified clientId across all inbounds.
  */
 async function findClientAcrossInbounds(panelClient, clientId) {
-  const response = await panelClient.get('/panel/api/inbounds/list');
+  const response = await panelClient.get('panel/api/inbounds/list');
   if (!response.data?.success) {
     throw new Error('Failed to retrieve inbounds list to search for client');
   }
@@ -260,16 +360,15 @@ async function findClientAcrossInbounds(panelClient, clientId) {
 }
 
 /**
- * Updates client expiry, bandwidth quota (totalGB), or enabled status.
+ * Updates client expiry, bandwidth quota (totalGB), or enabled status live.
  */
 async function updateClient(panelUrl, username, password, clientId, updateData) {
-  const cookie = await authenticate(panelUrl, username, password);
-  const client = createPanelClient(panelUrl, cookie);
+  const authContext = await authenticate(panelUrl, username, password);
+  const { client } = createClient(authContext);
 
   let inboundId = updateData.inboundId;
   let targetClient = null;
 
-  // If inboundId is not directly passed, locate client across inbounds
   const located = await findClientAcrossInbounds(client, clientId);
   if (!located) {
     throw new Error(`Client "${clientId}" not found on this panel`);
@@ -278,7 +377,6 @@ async function updateClient(panelUrl, username, password, clientId, updateData) 
   inboundId = located.inbound.id;
   targetClient = located.client;
 
-  // Merge updated values
   const updatedClientPayload = {
     ...targetClient,
     id: targetClient.id || clientId,
@@ -295,7 +393,7 @@ async function updateClient(panelUrl, username, password, clientId, updateData) 
     })
   };
 
-  const response = await client.post(`/panel/api/inbounds/updateClient/${clientId}`, payload);
+  const response = await client.post(`panel/api/inbounds/updateClient/${clientId}`, payload);
   if (!response.data?.success) {
     throw new Error(response.data?.msg || 'Failed to update client on 3x-ui panel');
   }
@@ -307,11 +405,11 @@ async function updateClient(panelUrl, username, password, clientId, updateData) 
 }
 
 /**
- * Deletes a client from an inbound.
+ * Deletes a client from an inbound live.
  */
 async function deleteClient(panelUrl, username, password, clientId, inboundId) {
-  const cookie = await authenticate(panelUrl, username, password);
-  const client = createPanelClient(panelUrl, cookie);
+  const authContext = await authenticate(panelUrl, username, password);
+  const { client } = createClient(authContext);
 
   let resolvedInboundId = inboundId;
   if (!resolvedInboundId) {
@@ -322,16 +420,14 @@ async function deleteClient(panelUrl, username, password, clientId, inboundId) {
     resolvedInboundId = located.inbound.id;
   }
 
-  // 3x-ui primary endpoint: POST /panel/api/inbounds/:inboundId/delClient/:clientId
   try {
-    const response = await client.post(`/panel/api/inbounds/${resolvedInboundId}/delClient/${clientId}`);
+    const response = await client.post(`panel/api/inbounds/${resolvedInboundId}/delClient/${clientId}`);
     if (response.data?.success) {
       return { success: true };
     }
   } catch (err) {
-    // Try alternative route if 404
     if (err.response?.status === 404) {
-      const altResponse = await client.post(`/panel/api/inbounds/delClient/${clientId}`);
+      const altResponse = await client.post(`panel/api/inbounds/delClient/${clientId}`);
       if (altResponse.data?.success) {
         return { success: true };
       }
@@ -343,11 +439,11 @@ async function deleteClient(panelUrl, username, password, clientId, inboundId) {
 }
 
 /**
- * Resets client traffic counters.
+ * Resets client traffic counters live.
  */
 async function resetClientTraffic(panelUrl, username, password, clientId, inboundId) {
-  const cookie = await authenticate(panelUrl, username, password);
-  const client = createPanelClient(panelUrl, cookie);
+  const authContext = await authenticate(panelUrl, username, password);
+  const { client } = createClient(authContext);
 
   let resolvedInboundId = inboundId;
   let clientEmail = null;
@@ -357,27 +453,25 @@ async function resetClientTraffic(panelUrl, username, password, clientId, inboun
     resolvedInboundId = located.inbound.id;
     clientEmail = located.client.email;
   } else if (!clientEmail) {
-    clientEmail = clientId; // In shadowsocks or if email was passed as clientId
+    clientEmail = clientId;
   }
 
   if (!clientEmail) {
     throw new Error(`Cannot reset traffic: unable to resolve client email for "${clientId}"`);
   }
 
-  // 3x-ui endpoint: POST /panel/api/inbounds/:inboundId/resetClientTraffic/:email
   try {
     const response = await client.post(
-      `/panel/api/inbounds/${resolvedInboundId}/resetClientTraffic/${encodeURIComponent(clientEmail)}`
+      `panel/api/inbounds/${resolvedInboundId}/resetClientTraffic/${encodeURIComponent(clientEmail)}`
     );
     if (response.data?.success) {
       return { success: true, email: clientEmail };
     }
     throw new Error(response.data?.msg || 'Failed to reset client traffic');
   } catch (err) {
-    // Some 3x-ui versions support /panel/api/inbounds/resetClientTraffic/:email
     try {
       const altResponse = await client.post(
-        `/panel/api/inbounds/resetClientTraffic/${encodeURIComponent(clientEmail)}`
+        `panel/api/inbounds/resetClientTraffic/${encodeURIComponent(clientEmail)}`
       );
       if (altResponse.data?.success) {
         return { success: true, email: clientEmail };
@@ -388,11 +482,11 @@ async function resetClientTraffic(panelUrl, username, password, clientId, inboun
 }
 
 /**
- * Adds a new client to an inbound.
+ * Adds a new client to an inbound live.
  */
 async function addClient(panelUrl, username, password, inboundId, clientData) {
-  const cookie = await authenticate(panelUrl, username, password);
-  const client = createPanelClient(panelUrl, cookie);
+  const authContext = await authenticate(panelUrl, username, password);
+  const { client } = createClient(authContext);
 
   const payload = {
     id: Number(inboundId),
@@ -401,7 +495,7 @@ async function addClient(panelUrl, username, password, inboundId, clientData) {
     })
   };
 
-  const response = await client.post('/panel/api/inbounds/addClient', payload);
+  const response = await client.post('panel/api/inbounds/addClient', payload);
   if (!response.data?.success) {
     throw new Error(response.data?.msg || 'Failed to add client to inbound');
   }
