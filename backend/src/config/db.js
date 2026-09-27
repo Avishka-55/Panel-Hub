@@ -16,6 +16,10 @@ async function connectDB() {
     console.log(`[Database] MongoDB connected: ${conn.connection.host}/${conn.connection.name}`);
   } catch (error) {
     console.error(`[Database Error] MongoDB connection failure: ${error.message}`);
+    if (error.message.includes('ECONNREFUSED')) {
+      console.error(`[Database Hint] MongoDB is not running at ${config.mongoUri}.`);
+      console.error(`                Run 'npm run db:start' or 'docker start mongodb' to start it.`);
+    }
     throw error;
   }
 }

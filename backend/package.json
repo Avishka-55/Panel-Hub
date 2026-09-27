@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
+    "db:start": "docker start mongodb 2>/dev/null || docker run -d --name mongodb -p 27017:27017 --restart unless-stopped -v mongodb_data:/data/db mongo:latest",
     "test": "node --test tests/**/*.test.js"
   },
   "keywords": [
