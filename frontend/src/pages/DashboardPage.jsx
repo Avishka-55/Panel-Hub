@@ -13,22 +13,33 @@ import {
   ShieldCheck,
   Radio,
   Clock,
-  HardDrive
+  HardDrive,
+  Bell,
+  BellOff,
+  Zap,
+  ShieldAlert,
+  Mail
 } from 'lucide-react';
 import { serversApi } from '../api/client';
 import AddServerModal from '../components/AddServerModal';
 import ConfirmModal from '../components/ConfirmModal';
+import AlertSettingsModal from '../components/AlertSettingsModal';
+import DailyReportModal from '../components/DailyReportModal';
 
 export default function DashboardPage({ onSelectServer }) {
   const [servers, setServers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [checkingHealth, setCheckingHealth] = useState(false);
+  const [healthStatusMsg, setHealthStatusMsg] = useState(null);
   const [error, setError] = useState(null);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [serverToDelete, setServerToDelete] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
+  const [serverForAlertModal, setServerForAlertModal] = useState(null);
   const [testingServerId, setTestingServerId] = useState(null);
 
   const fetchServers = async () => {
@@ -52,6 +63,48 @@ export default function DashboardPage({ onSelectServer }) {
   const handleRefresh = () => {
     setRefreshing(true);
     fetchServers();
+  };
+
+  const handleCheckAllHealth = async () => {
+    setCheckingHealth(true);
+    setHealthStatusMsg(null);
+    try {
+      const res = await serversApi.checkAllHealth();
+      if (res.success) {
+        if (res.servers) {
+          setServers(res.servers);
+        }
+        const online = (res.results || []).filter(r => r.status === 'online').length;
+        const total = (res.results || []).length;
+        setHealthStatusMsg(`Health sweep complete: ${online}/${total} panels online`);
+        setTimeout(() => setHealthStatusMsg(null), 6000);
+      }
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to complete health check');
+    } finally {
+      setCheckingHealth(false);
+    }
+  };
+
+  const handleToggleAlerts = async (e, server) => {
+    e.stopPropagation();
+    const currentAlerts = server.monitoring?.emailAlerts !== false;
+    try {
+      const res = await serversApi.updateMonitoring(server._id, {
+        emailAlerts: !currentAlerts
+      });
+      if (res.success) {
+        setServers(prev =>
+          prev.map(s =>
+            s._id === server._id
+              ? { ...s, monitoring: { ...(s.monitoring || {}), emailAlerts: !currentAlerts } }
+              : s
+          )
+        );
+      }
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to update alert settings');
+    }
   };
 
   const handleServerAdded = (newServer) => {
@@ -114,6 +167,25 @@ export default function DashboardPage({ onSelectServer }) {
 
         <div className="flex items-center gap-2.5">
           <button
+            onClick={handleCheckAllHealth}
+            disabled={checkingHealth}
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-emerald-300 hover:text-emerald-200 bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-500/30 rounded-xl transition-all shadow-sm"
+            title="Scan all connected panels for health and update telemetry"
+          >
+            <Activity className={`w-3.5 h-3.5 ${checkingHealth ? 'animate-pulse text-emerald-400' : 'text-emerald-400'}`} />
+            <span>{checkingHealth ? 'Scanning Health...' : 'Check All Health'}</span>
+          </button>
+
+          <button
+            onClick={() => setIsReportModalOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-indigo-300 hover:text-indigo-200 bg-indigo-950/40 hover:bg-indigo-900/50 border border-indigo-500/30 rounded-xl transition-all shadow-sm"
+            title="Daily Operations & Bandwidth Digest"
+          >
+            <Mail className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Daily Report</span>
+          </button>
+
+          <button
             onClick={handleRefresh}
             disabled={refreshing}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 rounded-xl transition-all"
@@ -132,6 +204,17 @@ export default function DashboardPage({ onSelectServer }) {
           </button>
         </div>
       </div>
+
+      {/* Health sweep status toast */}
+      {healthStatusMsg && (
+        <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center justify-between text-xs text-emerald-300 animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>{healthStatusMsg}</span>
+          </div>
+          <button onClick={() => setHealthStatusMsg(null)} className="text-emerald-400 hover:text-white text-base leading-none px-1">&times;</button>
+        </div>
+      )}
 
       {/* Metrics Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -287,6 +370,23 @@ export default function DashboardPage({ onSelectServer }) {
                         )}
                       </div>
 
+                      {server.telemetry && server.telemetry.cpu !== undefined && isOnline && (
+                        <div className="flex flex-wrap items-center gap-2 mt-2">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800/90 text-slate-300 border border-slate-700/60">
+                            <Zap className="w-3 h-3 text-amber-400" />
+                            CPU: <strong className={server.telemetry.cpu >= 80 ? 'text-rose-400' : 'text-slate-200'}>{server.telemetry.cpu}%</strong>
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800/90 text-slate-300 border border-slate-700/60">
+                            RAM: <strong className={server.telemetry.memPercent >= 80 ? 'text-rose-400' : 'text-slate-200'}>{server.telemetry.memPercent}%</strong>
+                          </span>
+                          {server.telemetry.xrayState && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              Xray: {server.telemetry.xrayState}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
                       {server.lastError && (
                         <p className="mt-1 text-[11px] text-rose-400/90 truncate max-w-md">
                           Error: {server.lastError}
@@ -297,6 +397,25 @@ export default function DashboardPage({ onSelectServer }) {
 
                   {/* Actions */}
                   <div className="flex items-center gap-2 self-end md:self-center" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setServerForAlertModal(server);
+                      }}
+                      className={`p-1.5 rounded-lg border transition-all ${
+                        server.monitoring?.emailAlerts !== false
+                          ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20 hover:bg-emerald-500/20'
+                          : 'text-slate-500 bg-slate-800/40 border-slate-700/50 hover:text-slate-300'
+                      }`}
+                      title="Customize Brevo Alert Rules & Notifications"
+                    >
+                      {server.monitoring?.emailAlerts !== false ? (
+                        <Bell className="w-3.5 h-3.5" />
+                      ) : (
+                        <BellOff className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+
                     <button
                       onClick={(e) => handleTestConnection(e, server._id)}
                       disabled={isTesting}
@@ -350,6 +469,23 @@ export default function DashboardPage({ onSelectServer }) {
         confirmText="Remove Server"
         danger={true}
         loading={deleteLoading}
+      />
+
+      {/* Alert Settings Modal */}
+      <AlertSettingsModal
+        isOpen={!!serverForAlertModal}
+        onClose={() => setServerForAlertModal(null)}
+        server={serverForAlertModal}
+        onSaved={(updated) => {
+          setServers((prev) => prev.map((s) => (s._id === updated._id ? updated : s)));
+          setServerForAlertModal(null);
+        }}
+      />
+
+      {/* Daily Operations Report Modal */}
+      <DailyReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
       />
     </div>
   );

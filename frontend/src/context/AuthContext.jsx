@@ -45,11 +45,16 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem('user', JSON.stringify(res.user));
       return res;
     }
-    throw new Error(res.error || 'Login failed');
+    return res;
   };
 
   const register = async (email, password) => {
     const res = await authApi.register(email, password);
+    return res;
+  };
+
+  const verifyOtp = async (email, otp) => {
+    const res = await authApi.verifyOtp(email, otp);
     if (res.success && res.token) {
       setToken(res.token);
       setUser(res.user);
@@ -57,7 +62,7 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem('user', JSON.stringify(res.user));
       return res;
     }
-    throw new Error(res.error || 'Registration failed');
+    throw new Error(res.error || 'Verification failed');
   };
 
   const logout = () => {
@@ -76,6 +81,7 @@ export const AuthProvider = ({ children }) => {
         loading,
         login,
         register,
+        verifyOtp,
         logout
       }}
     >

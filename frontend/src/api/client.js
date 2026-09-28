@@ -45,6 +45,22 @@ export const authApi = {
     const response = await api.post('/auth/register', { email, password });
     return response.data;
   },
+  verifyOtp: async (email, otp) => {
+    const response = await api.post('/auth/verify-otp', { email, otp });
+    return response.data;
+  },
+  resendOtp: async (email) => {
+    const response = await api.post('/auth/resend-otp', { email });
+    return response.data;
+  },
+  forgotPassword: async (email) => {
+    const response = await api.post('/auth/forgot-password', { email });
+    return response.data;
+  },
+  resetPassword: async (email, otp, newPassword) => {
+    const response = await api.post('/auth/reset-password', { email, otp, newPassword });
+    return response.data;
+  },
   getMe: async () => {
     const response = await api.get('/auth/me');
     return response.data;
@@ -102,6 +118,33 @@ export const serversApi = {
     const response = await api.post(`/servers/${serverId}/clients/${clientId}/reset-traffic`, null, {
       params: { inboundId }
     });
+    return response.data;
+  },
+  checkAllHealth: async () => {
+    const response = await api.post('/servers/health/check-all');
+    return response.data;
+  },
+  updateMonitoring: async (serverId, data) => {
+    const response = await api.patch(`/servers/${serverId}/monitoring`, data);
+    return response.data;
+  },
+  sendTestAlert: async (serverId) => {
+    const response = await api.post(`/servers/${serverId}/monitoring/test-alert`);
+    return response.data;
+  }
+};
+
+export const reportsApi = {
+  getPreview: async () => {
+    const response = await api.get('/reports/daily/preview');
+    return response.data;
+  },
+  sendNow: async () => {
+    const response = await api.post('/reports/daily/send-now');
+    return response.data;
+  },
+  updatePreferences: async (data) => {
+    const response = await api.patch('/reports/daily/preferences', data);
     return response.data;
   }
 };

@@ -73,6 +73,116 @@ router.get('/', async (req, res) => {
 });
 
 /**
+ * POST /api/servers/health/check-all
+ * Triggers an immediate health & telemetry check across all user's servers.
+ */
+router.post('/health/check-all', proxyLimiter, async (req, res) => {
+  try {
+    const { checkAllServers } = require('../services/healthMonitorService');
+    const results = await checkAllServers(req.user._id);
+    const updatedServers = await Server.find({ ownerId: req.user._id }).sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      message: `Health check completed for ${results.length} server(s)`,
+      results,
+      servers: updatedServers
+    });
+  } catch (error) {
+    console.error('[Health Check All Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to run health check'
+    });
+  }
+});
+
+/**
+ * PATCH /api/servers/:id/monitoring
+ * Updates automated health monitoring preferences for a specific server.
+ */
+router.patch('/:id/monitoring', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      enabled,
+      emailAlerts,
+      notifyOnDown,
+      notifyOnRecover,
+      notifyOnHighResource,
+      cpuThreshold,
+      ramThreshold,
+      consecutiveFails
+    } = req.body;
+
+    const server = await Server.findOne({ _id: id, ownerId: req.user._id });
+    if (!server) {
+      return res.status(404).json({ success: false, error: 'Server not found or access denied' });
+    }
+
+    if (!server.monitoring) {
+      server.monitoring = {};
+    }
+    if (typeof enabled === 'boolean') server.monitoring.enabled = enabled;
+    if (typeof emailAlerts === 'boolean') server.monitoring.emailAlerts = emailAlerts;
+    if (typeof notifyOnDown === 'boolean') server.monitoring.notifyOnDown = notifyOnDown;
+    if (typeof notifyOnRecover === 'boolean') server.monitoring.notifyOnRecover = notifyOnRecover;
+    if (typeof notifyOnHighResource === 'boolean') server.monitoring.notifyOnHighResource = notifyOnHighResource;
+    if (typeof cpuThreshold === 'number') server.monitoring.cpuThreshold = Math.min(99, Math.max(50, cpuThreshold));
+    if (typeof ramThreshold === 'number') server.monitoring.ramThreshold = Math.min(99, Math.max(50, ramThreshold));
+    if (typeof consecutiveFails === 'number') server.monitoring.consecutiveFails = Math.min(10, Math.max(1, consecutiveFails));
+
+    server.markModified('monitoring');
+    await server.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Monitoring preferences updated',
+      monitoring: server.monitoring,
+      server
+    });
+  } catch (error) {
+    console.error('[Update Monitoring Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to update monitoring preferences'
+    });
+  }
+});
+
+/**
+ * POST /api/servers/:id/monitoring/test-alert
+ * Dispatches an instant sample alert email to the user so they can test Brevo delivery and email appearance.
+ */
+router.post('/:id/monitoring/test-alert', proxyLimiter, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const server = await Server.findOne({ _id: id, ownerId: req.user._id });
+    if (!server) {
+      return res.status(404).json({ success: false, error: 'Server not found or access denied' });
+    }
+
+    const emailService = require('../utils/emailService');
+    const result = await emailService.sendTestAlertEmail({
+      to: req.user.email,
+      server
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `Test verification email dispatched to ${req.user.email}`,
+      provider: result.provider
+    });
+  } catch (error) {
+    console.error('[Test Alert Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to dispatch test alert'
+    });
+  }
+});
+
+/**
  * POST /api/servers
  * Connect and add a new 3x-ui server.
  * Supports both API Key (Bearer token) and Username/Password modes.
@@ -115,16 +225,66 @@ router.post('/', async (req, res) => {
       encryptedCreds = encrypt(panelPassword);
     }
 
-    // Initial connection test
+    // Initial connection & telemetry probe
     let initialStatus = 'untested';
     let inboundCount = 0;
     let initialError = null;
+    let initialTelemetry = {
+      cpu: 0,
+      memPercent: 0,
+      memUsed: 0,
+      memTotal: 0,
+      diskPercent: 0,
+      diskUsed: 0,
+      diskTotal: 0,
+      uptime: 0,
+      xrayState: 'unknown'
+    };
 
     try {
-      const connTest = await panelService.testConnection(panelUrl, authConfig);
-      if (connTest.success) {
+      // First attempt full server status inquiry for immediate telemetry & xray state
+      let statusData = null;
+      try {
+        statusData = await panelService.getServerStatus(panelUrl, authConfig);
+      } catch (statusErr) {
+        // Fallback to testConnection if status endpoint isn't supported
+        const connTest = await panelService.testConnection(panelUrl, authConfig);
+        if (connTest.success) {
+          inboundCount = connTest.inboundCount;
+        }
+      }
+
+      if (statusData) {
         initialStatus = 'online';
-        inboundCount = connTest.inboundCount;
+        const cpuPercent = Number(statusData.cpu?.percent ?? statusData.cpu ?? 0);
+        const memPercent = Number(statusData.mem?.percent ?? 0);
+        const memUsed = Number(statusData.mem?.current ?? statusData.mem?.used ?? 0);
+        const memTotal = Number(statusData.mem?.total ?? 0);
+        const diskPercent = Number(statusData.disk?.percent ?? 0);
+        const diskUsed = Number(statusData.disk?.current ?? statusData.disk?.used ?? 0);
+        const diskTotal = Number(statusData.disk?.total ?? 0);
+        const uptime = Number(statusData.uptime ?? 0);
+        const xrayState = statusData.xray?.state || (statusData.xray?.status === 'running' ? 'running' : 'running');
+
+        initialTelemetry = {
+          cpu: cpuPercent,
+          memPercent,
+          memUsed,
+          memTotal,
+          diskPercent,
+          diskUsed,
+          diskTotal,
+          uptime,
+          xrayState
+        };
+
+        // Also fetch live inbounds count
+        try {
+          const inbounds = await panelService.getInbounds(panelUrl, authConfig);
+          inboundCount = Array.isArray(inbounds) ? inbounds.length : (inbounds?.inbounds?.length || 0);
+        } catch (_) {}
+      } else {
+        initialStatus = 'online';
       }
     } catch (testErr) {
       console.warn(`[Server Add Notice] Connection test failed for "${nickname}": ${testErr.message}`);
@@ -140,7 +300,9 @@ router.post('/', async (req, res) => {
       status: initialStatus,
       lastError: initialError,
       inboundCount,
-      lastConnectedAt: initialStatus === 'online' ? new Date() : null
+      telemetry: initialTelemetry,
+      lastConnectedAt: initialStatus === 'online' ? new Date() : null,
+      lastCheckedAt: initialStatus === 'online' ? new Date() : null
     };
 
     if (isApiKey) {

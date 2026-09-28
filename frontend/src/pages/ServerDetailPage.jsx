@@ -11,25 +11,38 @@ import {
   XCircle,
   ExternalLink,
   ChevronRight,
-  AlertCircle
+  AlertCircle,
+  Bell
 } from 'lucide-react';
 import { serversApi } from '../api/client';
 import { formatBytes } from '../utils/formatters';
 import SystemResourceWidget from '../components/SystemResourceWidget';
-
+import AlertSettingsModal from '../components/AlertSettingsModal';
 
 export default function ServerDetailPage({ server, onBack, onSelectInbound }) {
+  const [currentServer, setCurrentServer] = useState(server);
+  const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
   const [inbounds, setInbounds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
 
-  const fetchInbounds = async () => {
+  const fetchData = async () => {
     try {
       setError(null);
-      const res = await serversApi.getInbounds(server._id);
-      if (res.success) {
-        setInbounds(res.inbounds || []);
+      const [serverRes, inboundsRes] = await Promise.allSettled([
+        serversApi.get(server._id),
+        serversApi.getInbounds(server._id)
+      ]);
+
+      if (serverRes.status === 'fulfilled' && serverRes.value?.success && serverRes.value?.server) {
+        setCurrentServer(serverRes.value.server);
+      }
+      if (inboundsRes.status === 'fulfilled' && inboundsRes.value?.success) {
+        setInbounds(inboundsRes.value.inbounds || []);
+      } else if (inboundsRes.status === 'rejected') {
+        const err = inboundsRes.reason;
+        setError(err.response?.data?.error || err.message || 'Failed to fetch inbounds from panel');
       }
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Failed to fetch inbounds from panel');
@@ -40,12 +53,12 @@ export default function ServerDetailPage({ server, onBack, onSelectInbound }) {
   };
 
   useEffect(() => {
-    fetchInbounds();
+    fetchData();
   }, [server._id]);
 
   const handleRefresh = () => {
     setRefreshing(true);
-    fetchInbounds();
+    fetchData();
   };
 
   const getProtocolBadge = (protocol) => {
@@ -90,6 +103,15 @@ export default function ServerDetailPage({ server, onBack, onSelectInbound }) {
         </div>
 
         <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setIsAlertModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 rounded-xl transition-all"
+            title="Configure Brevo Alert Settings"
+          >
+            <Bell className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Alert Settings</span>
+          </button>
+
           <button
             onClick={handleRefresh}
             disabled={refreshing}
@@ -233,6 +255,14 @@ export default function ServerDetailPage({ server, onBack, onSelectInbound }) {
           </div>
         </div>
       )}
+
+      {/* Alert Settings Modal */}
+      <AlertSettingsModal
+        isOpen={isAlertModalOpen}
+        onClose={() => setIsAlertModalOpen(false)}
+        server={currentServer}
+        onSaved={(updated) => setCurrentServer(updated)}
+      />
     </div>
   );
 }

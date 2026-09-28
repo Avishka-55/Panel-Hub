@@ -97,26 +97,60 @@ let userTokenB = '';
 let userAId = '';
 let serverAId = '';
 
-test('Auth: Register User A and User B', async () => {
+test('Auth: Register User A and User B with OTP verification', async () => {
   const resA = await request('POST', '/api/auth/register', {
     email: 'admin-a@saas.com',
     password: 'passwordA123'
   });
 
   assert.equal(resA.status, 201);
-  assert.ok(resA.body.token);
-  assert.equal(resA.body.user.email, 'admin-a@saas.com');
-  assert.equal(resA.body.user.passwordHash, undefined, 'passwordHash must never be exposed');
+  assert.equal(resA.body.requiresVerification, true);
+  assert.equal(resA.body.email, 'admin-a@saas.com');
 
-  userTokenA = resA.body.token;
-  userAId = resA.body.user.id;
+  // Verify OTP for User A
+  const userADoc = await User.findOne({ email: 'admin-a@saas.com' }).select('+verificationOtp +verificationOtpExpires');
+  assert.ok(userADoc.verificationOtp);
 
-  const resB = await request('POST', '/api/auth/register', {
+  // Test invalid OTP rejection
+  const badOtpRes = await request('POST', '/api/auth/verify-otp', {
+    email: 'admin-a@saas.com',
+    otp: '000000'
+  });
+  assert.equal(badOtpRes.status, 400);
+
+  // Generate fresh valid OTP on doc to verify endpoint
+  const validOtp = userADoc.createVerificationOtp();
+  await userADoc.save();
+
+  const verifyRes = await request('POST', '/api/auth/verify-otp', {
+    email: 'admin-a@saas.com',
+    otp: validOtp
+  });
+
+  assert.equal(verifyRes.status, 200);
+  assert.ok(verifyRes.body.token);
+  assert.equal(verifyRes.body.user.email, 'admin-a@saas.com');
+  assert.equal(verifyRes.body.user.isVerified, true);
+  assert.equal(verifyRes.body.user.passwordHash, undefined, 'passwordHash must never be exposed');
+
+  userTokenA = verifyRes.body.token;
+  userAId = verifyRes.body.user.id;
+
+  // Register and verify User B
+  await request('POST', '/api/auth/register', {
     email: 'admin-b@saas.com',
     password: 'passwordB123'
   });
-  assert.equal(resB.status, 201);
-  userTokenB = resB.body.token;
+  const userBDoc = await User.findOne({ email: 'admin-b@saas.com' });
+  const otpB = userBDoc.createVerificationOtp();
+  await userBDoc.save();
+
+  const verifyB = await request('POST', '/api/auth/verify-otp', {
+    email: 'admin-b@saas.com',
+    otp: otpB
+  });
+  assert.equal(verifyB.status, 200);
+  userTokenB = verifyB.body.token;
 });
 
 test('Auth: Login User A', async () => {
@@ -137,6 +171,51 @@ test('Auth: Reject login with wrong password', async () => {
     password: 'wrong-password'
   });
   assert.equal(res.status, 401);
+});
+
+test('Auth: Forgot password and reset password with OTP', async () => {
+  // Clear lastOtpSentAt cooldown to test fresh forgot-password request
+  await User.updateOne({ email: 'admin-a@saas.com' }, { $unset: { lastOtpSentAt: 1 } });
+
+  const forgotRes = await request('POST', '/api/auth/forgot-password', {
+    email: 'admin-a@saas.com'
+  });
+  assert.equal(forgotRes.status, 200);
+
+  // Test that requesting again immediately triggers 429 cooldown
+  const cooldownRes = await request('POST', '/api/auth/forgot-password', {
+    email: 'admin-a@saas.com'
+  });
+  assert.equal(cooldownRes.status, 429);
+
+
+  const userDoc = await User.findOne({ email: 'admin-a@saas.com' }).select('+resetPasswordOtp +resetPasswordOtpExpires');
+  const resetOtp = userDoc.createResetPasswordOtp();
+  await userDoc.save();
+
+  // Test invalid reset OTP rejection
+  const badReset = await request('POST', '/api/auth/reset-password', {
+    email: 'admin-a@saas.com',
+    otp: '999999',
+    newPassword: 'newPassword123'
+  });
+  assert.equal(badReset.status, 400);
+
+  // Test valid reset OTP
+  const resetRes = await request('POST', '/api/auth/reset-password', {
+    email: 'admin-a@saas.com',
+    otp: resetOtp,
+    newPassword: 'passwordA123' // Keep passwordA123 for subsequent server tests
+  });
+  assert.equal(resetRes.status, 200);
+
+  // Confirm login succeeds with password
+  const loginRes = await request('POST', '/api/auth/login', {
+    email: 'admin-a@saas.com',
+    password: 'passwordA123'
+  });
+  assert.equal(loginRes.status, 200);
+  userTokenA = loginRes.body.token;
 });
 
 test('Servers: Add connected 3x-ui server with encrypted password', async () => {

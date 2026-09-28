@@ -72,6 +72,78 @@ const serverSchema = new mongoose.Schema(
       type: Number,
       default: 0
     },
+    monitoring: {
+      enabled: {
+        type: Boolean,
+        default: true
+      },
+      emailAlerts: {
+        type: Boolean,
+        default: true
+      },
+      notifyOnDown: {
+        type: Boolean,
+        default: true
+      },
+      notifyOnRecover: {
+        type: Boolean,
+        default: true
+      },
+      notifyOnHighResource: {
+        type: Boolean,
+        default: false
+      },
+      cpuThreshold: {
+        type: Number,
+        default: 90,
+        min: 50,
+        max: 99
+      },
+      ramThreshold: {
+        type: Number,
+        default: 90,
+        min: 50,
+        max: 99
+      },
+      consecutiveFails: {
+        type: Number,
+        default: 1,
+        min: 1,
+        max: 10
+      }
+    },
+    telemetry: {
+      cpu: { type: Number, default: 0 },
+      memPercent: { type: Number, default: 0 },
+      memUsed: { type: Number, default: 0 },
+      memTotal: { type: Number, default: 0 },
+      diskPercent: { type: Number, default: 0 },
+      diskUsed: { type: Number, default: 0 },
+      diskTotal: { type: Number, default: 0 },
+      uptime: { type: Number, default: 0 },
+      xrayState: { type: String, default: 'unknown' }
+    },
+    lastCheckedAt: {
+      type: Date,
+      default: null
+    },
+    lastStatusChangeAt: {
+      type: Date,
+      default: null
+    },
+    failureCount: {
+      type: Number,
+      default: 0
+    },
+    lastAlertSentAt: {
+      type: Date,
+      default: null
+    },
+    lastAlertState: {
+      type: String,
+      enum: ['none', 'down', 'high_resource', 'recovered'],
+      default: 'none'
+    },
     createdAt: {
       type: Date,
       default: Date.now

@@ -8,8 +8,12 @@ const config = require('./config/config');
 const { apiLimiter } = require('./middleware/rateLimiter');
 const authRoutes = require('./routes/auth');
 const serverRoutes = require('./routes/servers');
+const reportRoutes = require('./routes/reports');
 
 const app = express();
+
+// Trust proxy for reverse proxy environments (Codespaces, Nginx, Cloudflare)
+app.set('trust proxy', 1);
 
 // Security headers (relaxed CSP for embedded scripts if in development)
 app.use(
@@ -37,7 +41,14 @@ if (process.env.NODE_ENV !== 'test') {
   app.use(morgan('dev'));
 }
 
-// Global API rate limit
+// Global API rate limit & cache prevention for live telemetry/settings
+app.set('etag', false);
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  next();
+});
 app.use('/api', apiLimiter);
 
 // Health check endpoint
@@ -52,6 +63,7 @@ app.get('/health', (req, res) => {
 // Mount API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/servers', serverRoutes);
+app.use('/api/reports', reportRoutes);
 
 // Serve frontend static build if available
 const frontendDistPath = path.resolve(__dirname, '../../frontend/dist');

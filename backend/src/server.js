@@ -3,6 +3,9 @@ const config = require('./config/config');
 const { connectDB } = require('./config/db');
 const { createMock3xUiServer } = require('./services/mockPanelServer');
 
+const { startHealthMonitor, stopHealthMonitor } = require('./services/healthMonitorService');
+const { startDailyReportScheduler, stopDailyReportScheduler } = require('./services/dailyReportService');
+
 let serverInstance;
 let mockPanelInstance;
 
@@ -10,6 +13,13 @@ async function startServer() {
   try {
     // Connect to MongoDB
     await connectDB();
+
+    // Start Autonomous Health & Telemetry Monitor (5 minutes default)
+    const checkIntervalMinutes = parseInt(process.env.HEALTH_CHECK_INTERVAL_MINUTES || '5', 10);
+    startHealthMonitor(checkIntervalMinutes);
+
+    // Start Scheduled Daily Operations & Health Report Scheduler
+    startDailyReportScheduler();
 
     // In development mode, also optionally launch a mock 3x-ui panel for immediate out-of-the-box testing
     if (process.env.START_MOCK_PANEL === 'true' || config.nodeEnv === 'development') {
@@ -35,6 +45,8 @@ async function startServer() {
 // Graceful shutdown
 async function gracefulShutdown(signal) {
   console.log(`\nReceived ${signal}. Shutting down gracefully...`);
+  stopHealthMonitor();
+  stopDailyReportScheduler();
   if (serverInstance) {
     serverInstance.close(() => {
       console.log('HTTP server closed.');
