@@ -240,6 +240,40 @@ function createMock3xUiServer(port = 0, defaultUsername = 'admin', defaultPasswo
       return res.end(JSON.stringify({ success: true, msg: 'Xray service restarted successfully' }));
     }
 
+    // Route: POST /panel/api/inbounds/onlines OR GET /panel/api/inbounds/onlines
+    if (
+      (pathname === '/panel/api/inbounds/onlines' || pathname === '/inbounds/onlines') &&
+      (req.method === 'POST' || req.method === 'GET')
+    ) {
+      if (!checkAuth()) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ success: false, msg: 'Unauthorized' }));
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      // Alice is online, Bob is offline in the mock
+      return res.end(JSON.stringify({ success: true, msg: '', obj: ['alice@example.com'] }));
+    }
+
+    // Route: POST /panel/api/inbounds/lastOnline OR GET /panel/api/inbounds/lastOnline
+    if (
+      (pathname === '/panel/api/inbounds/lastOnline' || pathname === '/inbounds/lastOnline') &&
+      (req.method === 'POST' || req.method === 'GET')
+    ) {
+      if (!checkAuth()) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ success: false, msg: 'Unauthorized' }));
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({
+        success: true,
+        msg: '',
+        obj: {
+          'alice@example.com': Date.now(),
+          'bob@example.com': Date.now() - 3600000
+        }
+      }));
+    }
+
     // Route: POST /panel/api/clients/update/:clientId OR /panel/api/inbounds/updateClient/:clientId
     const modernUpdateMatch = pathname.match(/^\/panel\/api\/clients\/update\/(.+)$/);
     const classicUpdateMatch = pathname.match(/^\/panel\/api\/inbounds\/updateClient\/(.+)$/);

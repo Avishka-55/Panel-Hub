@@ -346,14 +346,69 @@ async function getInboundClients(panelUrl, authConfigOrUsername, passwordOrInbou
     if (stat.id) statsMap.set(String(stat.id), stat);
   }
 
+  // Query 3x-ui for currently online clients
+  const onlineClientSet = new Set();
+  try {
+    let onlinesRes = null;
+    try {
+      onlinesRes = await client.post('panel/api/inbounds/onlines');
+    } catch (_) {
+      onlinesRes = await client.get('panel/api/inbounds/onlines');
+    }
+    if (onlinesRes?.data?.success && Array.isArray(onlinesRes.data.obj)) {
+      onlinesRes.data.obj.forEach((item) => {
+        if (typeof item === 'string') {
+          onlineClientSet.add(item.trim().toLowerCase());
+        } else if (item && typeof item === 'object') {
+          if (item.email) onlineClientSet.add(String(item.email).trim().toLowerCase());
+          if (item.id) onlineClientSet.add(String(item.id).trim().toLowerCase());
+        }
+      });
+    }
+  } catch (_) {
+    // Non-blocking fallback if onlines endpoint is unavailable
+  }
+
+  // Query 3x-ui for last online timestamps
+  const lastOnlineMap = new Map();
+  try {
+    let lastOnlineRes = null;
+    try {
+      lastOnlineRes = await client.post('panel/api/inbounds/lastOnline');
+    } catch (_) {
+      lastOnlineRes = await client.get('panel/api/inbounds/lastOnline');
+    }
+    if (lastOnlineRes?.data?.success && lastOnlineRes.data.obj) {
+      if (Array.isArray(lastOnlineRes.data.obj)) {
+        lastOnlineRes.data.obj.forEach((item) => {
+          if (item?.email && item?.time) {
+            lastOnlineMap.set(String(item.email).trim().toLowerCase(), item.time);
+          }
+        });
+      } else if (typeof lastOnlineRes.data.obj === 'object') {
+        Object.entries(lastOnlineRes.data.obj).forEach(([email, time]) => {
+          lastOnlineMap.set(String(email).trim().toLowerCase(), time);
+        });
+      }
+    }
+  } catch (_) {
+    // Non-blocking fallback if lastOnline endpoint is unavailable
+  }
+
   return clients.map((c) => {
     const stat = statsMap.get(c.email) || statsMap.get(String(c.id)) || {};
     const links = generateClientLinks(c, targetInbound, panelUrl);
+    const clientEmail = (c.email || '').trim().toLowerCase();
+    const clientIdStr = String(c.id || '').trim().toLowerCase();
+    const isOnline = onlineClientSet.has(clientEmail) || (clientIdStr && onlineClientSet.has(clientIdStr));
+    const lastOnline = lastOnlineMap.get(clientEmail) || lastOnlineMap.get(clientIdStr) || null;
 
     return {
       id: c.id || c.password || c.email,
       email: c.email || 'unnamed',
       enable: c.enable !== undefined ? Boolean(c.enable) : true,
+      isOnline: Boolean(isOnline),
+      lastOnline,
       totalGB: c.totalGB !== undefined ? c.totalGB : (stat.total || 0),
       expiryTime: c.expiryTime !== undefined ? c.expiryTime : (stat.expiryTime || 0),
       up: stat.up || 0,

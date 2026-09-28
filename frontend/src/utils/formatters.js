@@ -62,3 +62,21 @@ export function formatShortId(id, prefixLen = 8, suffixLen = 4) {
   return `${str.slice(0, prefixLen)}...${str.slice(-suffixLen)}`;
 }
 
+/**
+ * Formats timestamp to human readable relative time (e.g. "5m ago", "2h ago").
+ */
+export function formatRelativeTime(timestamp) {
+  if (!timestamp || isNaN(Number(timestamp))) return null;
+  const time = Number(timestamp);
+  if (time <= 0) return null;
+  const now = Date.now();
+  const diffSec = Math.max(0, Math.floor((now - time) / 1000));
+  if (diffSec < 60) return 'Just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
+}
+

@@ -22,7 +22,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { serversApi } from '../api/client';
-import { formatBytes, formatExpiry, isExpired, formatShortId } from '../utils/formatters';
+import { formatBytes, formatExpiry, isExpired, formatShortId, formatRelativeTime } from '../utils/formatters';
 import EditClientModal from '../components/EditClientModal';
 import AddClientModal from '../components/AddClientModal';
 import ConfirmModal from '../components/ConfirmModal';
@@ -216,11 +216,13 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
   };
 
   // Client counts
+  const onlineCount = clients.filter((c) => Boolean(c.isOnline)).length;
   const activeCount = clients.filter((c) => c.enable !== false).length;
   const disabledCount = clients.filter((c) => c.enable === false).length;
 
   // Filter clients
   const filteredClients = clients.filter((c) => {
+    if (statusFilter === 'online' && !c.isOnline) return false;
     if (statusFilter === 'active' && c.enable === false) return false;
     if (statusFilter === 'disabled' && c.enable !== false) return false;
 
@@ -344,15 +346,31 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
           </button>
           <button
             type="button"
-            onClick={() => setStatusFilter('active')}
+            onClick={() => setStatusFilter('online')}
             className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-medium transition-all ${
-              statusFilter === 'active'
+              statusFilter === 'online'
                 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-sm'
                 : 'text-slate-400 hover:text-emerald-400 hover:bg-slate-800/60'
             }`}
+            title="Filter by clients currently online & tunneling data"
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            Active ({activeCount})
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span>Online ({onlineCount})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('active')}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-medium transition-all ${
+              statusFilter === 'active'
+                ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 shadow-sm'
+                : 'text-slate-400 hover:text-indigo-400 hover:bg-slate-800/60'
+            }`}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+            <span>Active ({activeCount})</span>
           </button>
           <button
             type="button"
@@ -364,7 +382,7 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
             }`}
           >
             <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
-            Disabled ({disabledCount})
+            <span>Disabled ({disabledCount})</span>
           </button>
         </div>
       </div>
@@ -442,22 +460,54 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
                     <tr key={client.id} className="hover:bg-slate-800/30 transition-colors">
                       {/* Email / Remark */}
                       <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-white text-xs">{client.email}</span>
+                        <div className="flex items-center gap-2.5">
+                          {/* Live Online / Offline Small Icon */}
+                          {client.isOnline ? (
+                            <span
+                              className="relative flex h-2.5 w-2.5 shrink-0"
+                              title="Client is ONLINE (actively tunneling data)"
+                            >
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.9)]"></span>
+                            </span>
+                          ) : (
+                            <span
+                              className={`w-2.5 h-2.5 rounded-full shrink-0 border ${
+                                client.enable === false
+                                  ? 'bg-rose-500/20 border-rose-500/40'
+                                  : 'bg-slate-600/70 border-slate-500/40'
+                              }`}
+                              title={client.enable === false ? 'Client is disabled' : 'Client is offline'}
+                            />
+                          )}
+
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-semibold text-white text-xs">{client.email}</span>
+                            {client.isOnline && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 uppercase tracking-wider">
+                                ONLINE
+                              </span>
+                            )}
+                          </div>
+
                           <button
                             onClick={() => setQrModalClient(client)}
-                            className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-md transition-all shrink-0"
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-md transition-all shrink-0 ml-auto sm:ml-0"
                             title="Show QR Code, V2Ray URI & Subscription Link"
                           >
                             <QrCode className="w-3 h-3" />
                             <span>QR / Links</span>
                           </button>
                         </div>
-                        {client.subId && (
-                          <div className="text-[10px] text-slate-500 font-mono mt-0.5">
-                            Sub: {client.subId}
-                          </div>
-                        )}
+                        <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-500 font-mono">
+                          {client.subId && <span>Sub: {client.subId}</span>}
+                          {client.subId && client.lastOnline && <span>•</span>}
+                          {client.lastOnline && (
+                            <span className="text-slate-400">
+                              Last online: {formatRelativeTime(client.lastOnline)}
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* UUID / Key with copy button */}
