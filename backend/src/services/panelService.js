@@ -346,62 +346,114 @@ async function getInboundClients(panelUrl, authConfigOrUsername, passwordOrInbou
     if (stat.id) statsMap.set(String(stat.id), stat);
   }
 
-  // Query 3x-ui for currently online clients
+  // Probe 3x-ui for currently online clients using candidate endpoints
   const onlineClientSet = new Set();
-  try {
-    let onlinesRes = null;
+  const probeEndpoints = [
+    { method: 'post', url: 'panel/api/inbounds/onlines', data: {} },
+    { method: 'get', url: 'panel/api/inbounds/onlines' },
+    { method: 'post', url: 'panel/api/clients/onlines', data: {} },
+    { method: 'get', url: 'panel/api/clients/onlines' }
+  ];
+
+  for (const probe of probeEndpoints) {
     try {
-      onlinesRes = await client.post('panel/api/inbounds/onlines');
-    } catch (_) {
-      onlinesRes = await client.get('panel/api/inbounds/onlines');
-    }
-    if (onlinesRes?.data?.success && Array.isArray(onlinesRes.data.obj)) {
-      onlinesRes.data.obj.forEach((item) => {
-        if (typeof item === 'string') {
-          onlineClientSet.add(item.trim().toLowerCase());
-        } else if (item && typeof item === 'object') {
-          if (item.email) onlineClientSet.add(String(item.email).trim().toLowerCase());
-          if (item.id) onlineClientSet.add(String(item.id).trim().toLowerCase());
+      const res = probe.method === 'post'
+        ? await client.post(probe.url, probe.data || {})
+        : await client.get(probe.url);
+
+      const raw = res?.data?.obj !== undefined ? res.data.obj : res?.data;
+      if (raw) {
+        const countBefore = onlineClientSet.size;
+        if (Array.isArray(raw)) {
+          raw.forEach((item) => {
+            if (typeof item === 'string') {
+              onlineClientSet.add(item.trim().toLowerCase());
+            } else if (item && typeof item === 'object') {
+              if (item.email) onlineClientSet.add(String(item.email).trim().toLowerCase());
+              if (item.id) onlineClientSet.add(String(item.id).trim().toLowerCase());
+            }
+          });
+        } else if (typeof raw === 'object' && raw !== null) {
+          Object.keys(raw).forEach((key) => {
+            if (key) onlineClientSet.add(String(key).trim().toLowerCase());
+          });
         }
-      });
+        if (onlineClientSet.size > countBefore) {
+          console.log(`[3x-ui Online Probe] Succeeded via ${probe.method.toUpperCase()} ${probe.url}:`, Array.from(onlineClientSet));
+          break;
+        }
+      }
+    } catch (_) {
+      // Continue to next candidate endpoint
     }
-  } catch (_) {
-    // Non-blocking fallback if onlines endpoint is unavailable
   }
 
-  // Query 3x-ui for last online timestamps
+  // Probe 3x-ui for last online timestamps
   const lastOnlineMap = new Map();
-  try {
-    let lastOnlineRes = null;
+  const lastOnlineEndpoints = [
+    { method: 'post', url: 'panel/api/inbounds/lastOnline', data: {} },
+    { method: 'get', url: 'panel/api/inbounds/lastOnline' },
+    { method: 'post', url: 'panel/api/clients/lastOnline', data: {} },
+    { method: 'get', url: 'panel/api/clients/lastOnline' }
+  ];
+
+  for (const probe of lastOnlineEndpoints) {
     try {
-      lastOnlineRes = await client.post('panel/api/inbounds/lastOnline');
-    } catch (_) {
-      lastOnlineRes = await client.get('panel/api/inbounds/lastOnline');
-    }
-    if (lastOnlineRes?.data?.success && lastOnlineRes.data.obj) {
-      if (Array.isArray(lastOnlineRes.data.obj)) {
-        lastOnlineRes.data.obj.forEach((item) => {
-          if (item?.email && item?.time) {
-            lastOnlineMap.set(String(item.email).trim().toLowerCase(), item.time);
-          }
-        });
-      } else if (typeof lastOnlineRes.data.obj === 'object') {
-        Object.entries(lastOnlineRes.data.obj).forEach(([email, time]) => {
-          lastOnlineMap.set(String(email).trim().toLowerCase(), time);
-        });
+      const res = probe.method === 'post'
+        ? await client.post(probe.url, probe.data || {})
+        : await client.get(probe.url);
+
+      const raw = res?.data?.obj !== undefined ? res.data.obj : res?.data;
+      if (raw) {
+        if (Array.isArray(raw)) {
+          raw.forEach((item) => {
+            if (item && item.email && item.time) {
+              lastOnlineMap.set(String(item.email).trim().toLowerCase(), Number(item.time));
+            }
+          });
+        } else if (typeof raw === 'object' && raw !== null) {
+          Object.entries(raw).forEach(([k, v]) => {
+            if (v) lastOnlineMap.set(String(k).trim().toLowerCase(), Number(v));
+          });
+        }
+        if (lastOnlineMap.size > 0) break;
       }
-    }
-  } catch (_) {
-    // Non-blocking fallback if lastOnline endpoint is unavailable
+    } catch (_) {}
   }
+
+  console.log(`[3x-ui Clients Status] Inbound "${targetInbound.remark}": ${clients.length} clients registered. Online detected: ${onlineClientSet.size}`);
 
   return clients.map((c) => {
     const stat = statsMap.get(c.email) || statsMap.get(String(c.id)) || {};
     const links = generateClientLinks(c, targetInbound, panelUrl);
     const clientEmail = (c.email || '').trim().toLowerCase();
     const clientIdStr = String(c.id || '').trim().toLowerCase();
-    const isOnline = onlineClientSet.has(clientEmail) || (clientIdStr && onlineClientSet.has(clientIdStr));
-    const lastOnline = lastOnlineMap.get(clientEmail) || lastOnlineMap.get(clientIdStr) || null;
+    const clientPassStr = String(c.password || '').trim().toLowerCase();
+
+    // Check direct online indicators embedded by some 3x-ui forks in client or stat
+    const directOnline = Boolean(c.online || c.isOnline || stat.online || stat.isOnline);
+
+    // Check online set matches (by email, id, password, or email prefix)
+    let probedOnline = onlineClientSet.has(clientEmail) ||
+      (clientIdStr && onlineClientSet.has(clientIdStr)) ||
+      (clientPassStr && onlineClientSet.has(clientPassStr));
+
+    if (!probedOnline && clientEmail) {
+      for (const onlineItem of onlineClientSet) {
+        if (
+          onlineItem === clientEmail ||
+          onlineItem === clientIdStr ||
+          clientEmail.startsWith(onlineItem + '@') ||
+          onlineItem.startsWith(clientEmail + '@')
+        ) {
+          probedOnline = true;
+          break;
+        }
+      }
+    }
+
+    const isOnline = directOnline || probedOnline;
+    const lastOnline = c.lastOnline || stat.lastOnline || lastOnlineMap.get(clientEmail) || lastOnlineMap.get(clientIdStr) || null;
 
     return {
       id: c.id || c.password || c.email,
