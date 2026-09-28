@@ -26,7 +26,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import AlertSettingsModal from '../components/AlertSettingsModal';
 import DailyReportModal from '../components/DailyReportModal';
 
-export default function DashboardPage({ onSelectServer }) {
+export default function DashboardPage({ onSelectServer, onServerCountChange }) {
   const [servers, setServers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -41,6 +41,10 @@ export default function DashboardPage({ onSelectServer }) {
 
   const [serverForAlertModal, setServerForAlertModal] = useState(null);
   const [testingServerId, setTestingServerId] = useState(null);
+
+  useEffect(() => {
+    onServerCountChange?.(servers.length);
+  }, [servers, onServerCountChange]);
 
   const fetchServers = async () => {
     try {

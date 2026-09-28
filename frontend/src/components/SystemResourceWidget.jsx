@@ -10,10 +10,13 @@ import {
   ArrowDownLeft,
   ShieldCheck,
   AlertTriangle,
-  Zap
+  Zap,
+  RotateCcw,
+  CheckCircle2
 } from 'lucide-react';
 import { serversApi } from '../api/client';
 import { formatBytes } from '../utils/formatters';
+import ConfirmModal from './ConfirmModal';
 
 function formatUptime(seconds) {
   if (!seconds || isNaN(seconds)) return '0m';
@@ -37,6 +40,33 @@ export default function SystemResourceWidget({ serverId, serverNickname }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
+
+  const [isRestartModalOpen, setIsRestartModalOpen] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [restartFeedback, setRestartFeedback] = useState(null);
+
+  const handleRestartXray = async () => {
+    setRestarting(true);
+    try {
+      const res = await serversApi.restartXray(serverId);
+      if (res.success) {
+        if (res.status) {
+          setStatus(res.status);
+        } else {
+          fetchStatus(true);
+        }
+        setRestartFeedback(res.message || 'Xray engine restarted successfully');
+        setTimeout(() => setRestartFeedback(null), 4000);
+        setIsRestartModalOpen(false);
+      } else {
+        alert(res.error || 'Failed to restart Xray');
+      }
+    } catch (err) {
+      alert(err.response?.data?.error || err.message || 'Failed to restart Xray');
+    } finally {
+      setRestarting(false);
+    }
+  };
 
   const fetchStatus = async (isManual = false) => {
     if (isManual) setRefreshing(true);
@@ -136,6 +166,17 @@ export default function SystemResourceWidget({ serverId, serverNickname }) {
               <span className="font-semibold">Xray {status.xray.version ? `v${status.xray.version}` : 'Running'}</span>
             </div>
           )}
+
+          {/* Restart Xray Button */}
+          <button
+            onClick={() => setIsRestartModalOpen(true)}
+            disabled={restarting}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-[11px] text-amber-400 border border-amber-500/30 transition-all font-medium disabled:opacity-50"
+            title="Restart Xray Core Engine"
+          >
+            <RotateCcw className={`w-3.5 h-3.5 ${restarting ? 'animate-spin' : ''}`} />
+            <span>Restart Xray</span>
+          </button>
 
           {/* Manual Refresh */}
           <button
@@ -285,6 +326,26 @@ export default function SystemResourceWidget({ serverId, serverNickname }) {
           </div>
         </div>
       </div>
+
+      {/* Restart Feedback Toast */}
+      {restartFeedback && (
+        <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs animate-fadeIn">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span>{restartFeedback}</span>
+        </div>
+      )}
+
+      {/* Confirm Restart Modal */}
+      <ConfirmModal
+        isOpen={isRestartModalOpen}
+        onClose={() => setIsRestartModalOpen(false)}
+        onConfirm={handleRestartXray}
+        title="Restart Xray Core Engine"
+        message="Are you sure you want to restart the Xray engine on this server? Active proxy client connections will momentarily disconnect and reconnect automatically within 1-2 seconds."
+        confirmText="Restart Xray"
+        danger={true}
+        loading={restarting}
+      />
     </div>
   );
 }

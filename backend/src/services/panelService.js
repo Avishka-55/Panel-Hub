@@ -472,7 +472,8 @@ async function updateClient(panelUrl, authConfigOrUsername, passwordOrClientId, 
     })
   };
 
-  const response = await client.post(`panel/api/inbounds/updateClient/${encodeURIComponent(clientId)}`, payload);
+  const clientKey = targetClient.id || clientId;
+  const response = await client.post(`panel/api/inbounds/updateClient/${encodeURIComponent(clientKey)}`, payload);
   if (!response.data?.success) {
     throw new Error(response.data?.msg || 'Failed to update client on 3x-ui panel');
   }
@@ -799,6 +800,44 @@ async function getServerStatus(panelUrl, authConfigOrUsername, password) {
   };
 }
 
+/**
+ * Restarts the Xray core service live on the 3x-ui panel.
+ */
+async function restartXray(panelUrl, authConfigOrUsername, password) {
+  const authConfig = resolveAuthConfig(authConfigOrUsername, password);
+  const { client } = await getAuthenticatedClient(panelUrl, authConfig);
+
+  const endpoints = [
+    'panel/api/server/restartXrayService',
+    'server/restartXrayService',
+    'panel/server/restartXrayService',
+    'xui/server/restartXrayService'
+  ];
+
+  let lastError = null;
+  for (const endpoint of endpoints) {
+    try {
+      const res = await client.post(endpoint, {});
+      if (res.data?.success) {
+        return {
+          success: true,
+          message: res.data?.msg || 'Xray engine restarted successfully'
+        };
+      }
+      if (res.data?.msg) {
+        lastError = new Error(res.data.msg);
+      }
+    } catch (err) {
+      if (err.response && err.response.status !== 404 && err.response.status !== 405) {
+        throw new Error(err.response.data?.msg || err.message);
+      }
+      lastError = err;
+    }
+  }
+
+  throw new Error(lastError?.message || 'Failed to restart Xray engine on this panel');
+}
+
 module.exports = {
   authenticate: authenticateWithCredentials,
   getAuthenticatedClient,
@@ -809,6 +848,7 @@ module.exports = {
   deleteClient,
   resetClientTraffic,
   addClient,
-  getServerStatus
+  getServerStatus,
+  restartXray
 };
 

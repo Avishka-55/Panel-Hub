@@ -1,0 +1,126 @@
+name: Deploy PanelHub to Production VM
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build & Verify Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package.json'
+
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build Production Frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Upload Frontend Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+          retention-days: 1
+
+  deploy:
+    name: Deploy to Ubuntu VM
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download Frontend Build
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p ${{ secrets.VM_SSH_PORT || 22 }} -H "${{ secrets.VM_SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Sync Files to VM via Rsync
+        run: |
+          SSH_PORT="${{ secrets.VM_SSH_PORT || 22 }}"
+          
+          # Create target directories on VM
+          ssh -i ~/.ssh/deploy_key -p $SSH_PORT ${{ secrets.VM_SSH_USER }}@${{ secrets.VM_SSH_HOST }} "sudo mkdir -p /var/www/panelhub/frontend/dist /var/www/panelhub/backend && sudo chown -R ${{ secrets.VM_SSH_USER }}:${{ secrets.VM_SSH_USER }} /var/www/panelhub"
+
+          # Sync backend source code (excluding tests, local .env, node_modules)
+          rsync -avz -e "ssh -i ~/.ssh/deploy_key -p $SSH_PORT" \
+            --exclude 'node_modules' \
+            --exclude '.env' \
+            --exclude '.git' \
+            --exclude 'tests' \
+            ./backend/ ${{ secrets.VM_SSH_USER }}@${{ secrets.VM_SSH_HOST }}:/var/www/panelhub/backend/
+
+          # Sync pre-built frontend dist directly (saves VM RAM & CPU)
+          rsync -avz -e "ssh -i ~/.ssh/deploy_key -p $SSH_PORT" \
+            ./frontend/dist/ ${{ secrets.VM_SSH_USER }}@${{ secrets.VM_SSH_HOST }}:/var/www/panelhub/frontend/dist/
+
+      - name: Configure Production Environment & Restart PM2
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VM_SSH_HOST }}
+          username: ${{ secrets.VM_SSH_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          port: ${{ secrets.VM_SSH_PORT || 22 }}
+          script: |
+            set -e
+
+            # Write secure production .env file
+            cat << 'EOF' > /var/www/panelhub/backend/.env
+            PORT=5000
+            NODE_ENV=production
+            MONGODB_URI=${{ secrets.PROD_MONGODB_URI }}
+            JWT_SECRET=${{ secrets.PROD_JWT_SECRET }}
+            MASTER_KEY=${{ secrets.PROD_MASTER_KEY }}
+            BREVO_API_KEY=${{ secrets.PROD_BREVO_API_KEY }}
+            EMAIL_FROM=${{ secrets.PROD_EMAIL_FROM }}
+            EMAIL_FROM_NAME="PanelHub Security"
+            START_MOCK_PANEL=false
+            HEALTH_CHECK_INTERVAL_MINUTES=5
+            EOF
+
+            # Install production backend dependencies
+            cd /var/www/panelhub/backend
+            npm install --omit=dev
+
+            # Ensure PM2 is installed globally
+            if ! command -v pm2 &> /dev/null; then
+              echo "Installing PM2 globally..."
+              sudo npm install -g pm2
+            fi
+
+            # Start or restart PanelHub in PM2
+            if pm2 list | grep -q "panelhub"; then
+              echo "Reloading existing PM2 panelhub service..."
+              pm2 reload panelhub --update-env
+            else
+              echo "Starting new PM2 panelhub service..."
+              pm2 start src/server.js --name "panelhub"
+            fi
+            pm2 save
+
+            # Set correct file permissions for Nginx
+            sudo chmod -R 755 /var/www/panelhub/frontend/dist
+
+            echo "✅ PanelHub deployment succeeded!"

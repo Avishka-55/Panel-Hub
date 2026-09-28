@@ -66,6 +66,16 @@ export default function DocsView() {
                   <td className="py-2">/panel/api/inbounds/:id/resetClientTraffic/:email</td>
                 </tr>
                 <tr>
+                  <td className="py-2 text-slate-400">System Telemetry</td>
+                  <td className="py-2 text-indigo-400">GET</td>
+                  <td className="py-2">/server/status</td>
+                </tr>
+                <tr>
+                  <td className="py-2 text-slate-400">Restart Xray Service</td>
+                  <td className="py-2 text-emerald-400">POST</td>
+                  <td className="py-2">/panel/api/server/restartXrayService</td>
+                </tr>
+                <tr>
                   <td className="py-2 text-slate-400">Delete Client</td>
                   <td className="py-2 text-emerald-400">POST</td>
                   <td className="py-2">/panel/api/inbounds/:id/delClient/:clientId</td>

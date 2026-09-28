@@ -51,3 +51,14 @@ export function isExpired(timestamp) {
   if (!timestamp || timestamp <= 0) return false;
   return new Date(timestamp).getTime() < Date.now();
 }
+
+/**
+ * Shortens a UUID or long key for compact display (e.g. "c1a11111...5555").
+ */
+export function formatShortId(id, prefixLen = 8, suffixLen = 4) {
+  if (!id) return '';
+  const str = String(id).trim();
+  if (str.length <= prefixLen + suffixLen + 3) return str;
+  return `${str.slice(0, prefixLen)}...${str.slice(-suffixLen)}`;
+}
+

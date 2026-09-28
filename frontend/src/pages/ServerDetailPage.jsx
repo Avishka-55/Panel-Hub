@@ -12,20 +12,44 @@ import {
   ExternalLink,
   ChevronRight,
   AlertCircle,
-  Bell
+  Bell,
+  RotateCcw
 } from 'lucide-react';
 import { serversApi } from '../api/client';
 import { formatBytes } from '../utils/formatters';
 import SystemResourceWidget from '../components/SystemResourceWidget';
 import AlertSettingsModal from '../components/AlertSettingsModal';
+import ConfirmModal from '../components/ConfirmModal';
 
 export default function ServerDetailPage({ server, onBack, onSelectInbound }) {
   const [currentServer, setCurrentServer] = useState(server);
   const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
+  const [isRestartXrayModalOpen, setIsRestartXrayModalOpen] = useState(false);
+  const [restartingXray, setRestartingXray] = useState(false);
+  const [restartFeedback, setRestartFeedback] = useState(null);
   const [inbounds, setInbounds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
+
+  const handleRestartXray = async () => {
+    setRestartingXray(true);
+    try {
+      const res = await serversApi.restartXray(server._id);
+      if (res.success) {
+        setRestartFeedback(res.message || 'Xray engine restarted successfully');
+        setTimeout(() => setRestartFeedback(null), 4000);
+        setIsRestartXrayModalOpen(false);
+        fetchData();
+      } else {
+        alert(res.error || 'Failed to restart Xray');
+      }
+    } catch (err) {
+      alert(err.response?.data?.error || err.message || 'Failed to restart Xray');
+    } finally {
+      setRestartingXray(false);
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -104,6 +128,16 @@ export default function ServerDetailPage({ server, onBack, onSelectInbound }) {
 
         <div className="flex items-center gap-2.5">
           <button
+            onClick={() => setIsRestartXrayModalOpen(true)}
+            disabled={restartingXray}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-amber-300 hover:text-white bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-xl transition-all disabled:opacity-50"
+            title="Restart Xray Core Engine"
+          >
+            <RotateCcw className={`w-3.5 h-3.5 ${restartingXray ? 'animate-spin' : ''}`} />
+            <span>Restart Xray</span>
+          </button>
+
+          <button
             onClick={() => setIsAlertModalOpen(true)}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 rounded-xl transition-all"
             title="Configure Brevo Alert Settings"
@@ -122,6 +156,14 @@ export default function ServerDetailPage({ server, onBack, onSelectInbound }) {
           </button>
         </div>
       </div>
+
+      {/* Restart Feedback Notification */}
+      {restartFeedback && (
+        <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs animate-fadeIn">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span>{restartFeedback}</span>
+        </div>
+      )}
 
       {/* Instance Hardware & System Resources (CPU, RAM, Disk, Uptime) */}
       <SystemResourceWidget serverId={server._id} serverNickname={server.nickname} />
@@ -262,6 +304,18 @@ export default function ServerDetailPage({ server, onBack, onSelectInbound }) {
         onClose={() => setIsAlertModalOpen(false)}
         server={currentServer}
         onSaved={(updated) => setCurrentServer(updated)}
+      />
+
+      {/* Confirm Restart Xray Modal */}
+      <ConfirmModal
+        isOpen={isRestartXrayModalOpen}
+        onClose={() => setIsRestartXrayModalOpen(false)}
+        onConfirm={handleRestartXray}
+        title="Restart Xray Core Engine"
+        message={`Are you sure you want to restart the Xray engine on "${server.nickname}"? Active proxy client connections will momentarily disconnect and reconnect automatically within 1-2 seconds.`}
+        confirmText="Restart Xray"
+        danger={true}
+        loading={restartingXray}
       />
     </div>
   );

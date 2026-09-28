@@ -92,6 +92,10 @@ export const serversApi = {
     const response = await api.get(`/servers/${id}/status`);
     return response.data;
   },
+  restartXray: async (id) => {
+    const response = await api.post(`/servers/${id}/restart-xray`);
+    return response.data;
+  },
   getInbounds: async (id) => {
     const response = await api.get(`/servers/${id}/inbounds`);
     return response.data;

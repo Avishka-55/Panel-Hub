@@ -224,6 +224,21 @@ function createMock3xUiServer(port = 0, defaultUsername = 'admin', defaultPasswo
       }));
     }
 
+    // Route: POST /panel/api/server/restartXrayService OR /server/restartXrayService
+    if (
+      (pathname === '/panel/api/server/restartXrayService' ||
+       pathname === '/server/restartXrayService' ||
+       pathname === '/panel/server/restartXrayService') &&
+      req.method === 'POST'
+    ) {
+      if (!checkAuth()) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ success: false, msg: 'Unauthorized' }));
+      }
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: true, msg: 'Xray service restarted successfully' }));
+    }
 
     // Route: POST /panel/api/clients/update/:clientId OR /panel/api/inbounds/updateClient/:clientId
     const modernUpdateMatch = pathname.match(/^\/panel\/api\/clients\/update\/(.+)$/);

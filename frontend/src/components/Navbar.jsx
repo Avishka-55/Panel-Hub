@@ -1,14 +1,30 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Server, Shield, LogOut, User, Activity } from 'lucide-react';
+import { Server, Shield, LogOut, User, Activity, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
-export default function Navbar() {
+export default function Navbar({ isSidebarVisible = true, onToggleSidebar, activeView, onViewChange, serverCount = 0 }) {
   const { user, logout } = useAuth();
 
   return (
     <header className="sticky top-0 z-30 border-b border-slate-800 bg-slate-900/80 backdrop-blur-md px-6 py-3.5 transition-all">
       <div className="flex items-center justify-between max-w-7xl mx-auto">
         <div className="flex items-center gap-3">
+          {user && onToggleSidebar && (
+            <button
+              type="button"
+              onClick={onToggleSidebar}
+              className="p-2 rounded-xl text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 transition-all focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              title={isSidebarVisible ? 'Hide navigation panel (Ctrl+B)' : 'Show navigation panel (Ctrl+B)'}
+              aria-label={isSidebarVisible ? 'Hide navigation panel' : 'Show navigation panel'}
+            >
+              {isSidebarVisible ? (
+                <PanelLeftClose className="w-4 h-4" />
+              ) : (
+                <PanelLeftOpen className="w-4 h-4 text-indigo-400" />
+              )}
+            </button>
+          )}
+
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
             <Server className="w-5 h-5 text-white" />
           </div>
@@ -22,6 +38,53 @@ export default function Navbar() {
             <p className="text-xs text-slate-400">Multi-Tenant 3x-ui Panel Orchestrator</p>
           </div>
         </div>
+
+        {/* Quick nav links when navigation panel is hidden */}
+        {user && !isSidebarVisible && onViewChange && (
+          <nav className="hidden md:flex items-center gap-1 bg-slate-800/60 p-1 border border-slate-700/60 rounded-xl text-xs animate-fadeIn">
+            <button
+              onClick={() => onViewChange('servers')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all ${
+                activeView === 'servers'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <span>Connected Panels</span>
+              {serverCount > 0 && (
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                    activeView === 'servers'
+                      ? 'bg-indigo-700 text-white'
+                      : 'bg-slate-700 text-slate-300'
+                  }`}
+                >
+                  {serverCount}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => onViewChange('security')}
+              className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+                activeView === 'security'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              Security & Vault
+            </button>
+            <button
+              onClick={() => onViewChange('docs')}
+              className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+                activeView === 'docs'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              API Guide
+            </button>
+          </nav>
+        )}
 
         {user && (
           <div className="flex items-center gap-4">

@@ -76,8 +76,14 @@ export default function EditClientModal({ isOpen, onClose, serverId, client, onC
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
-      <div className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-800/40">
           <div>
@@ -104,19 +110,40 @@ export default function EditClientModal({ isOpen, onClose, serverId, client, onC
           {/* Enabled Status Toggle */}
           <div className="flex items-center justify-between p-3.5 rounded-xl bg-slate-800/60 border border-slate-700/80">
             <div>
-              <span className="text-xs font-semibold text-slate-200 block">Connection State</span>
-              <span className="text-[11px] text-slate-400">Enable or disable client access immediately</span>
+              <span className="text-xs font-semibold text-slate-200 block">Client Status</span>
+              <span className="text-[11px] text-slate-400">
+                {enable ? 'Client is active and permitted to connect' : 'Client is deactivated and blocked from connecting'}
+              </span>
             </div>
             <button
               type="button"
+              role="switch"
+              aria-checked={enable}
+              aria-label={enable ? 'Deactivate client' : 'Activate client'}
               onClick={() => setEnable(!enable)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
                 enable
-                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                  : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
+                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-750'
               }`}
             >
-              {enable ? 'Active' : 'Disabled'}
+              <span
+                className={`w-2 h-2 rounded-full transition-all ${
+                  enable ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-slate-500'
+                }`}
+              />
+              <span>{enable ? 'Active' : 'Disabled'}</span>
+              <span
+                className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full p-0.5 transition-colors duration-200 ease-in-out ${
+                  enable ? 'bg-emerald-600' : 'bg-slate-700'
+                }`}
+              >
+                <span
+                  className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform duration-200 ease-in-out shadow-sm ${
+                    enable ? 'translate-x-3' : 'translate-x-0'
+                  }`}
+                />
+              </span>
             </button>
           </div>
 

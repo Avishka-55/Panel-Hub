@@ -326,6 +326,18 @@ test('Server Status Proxy: GET /api/servers/:id/status fetches instance CPU, RAM
   assert.ok(res.body.status.uptime > 0);
 });
 
+test('Xray Restart Proxy: POST /api/servers/:id/restart-xray restarts Xray core engine', async () => {
+  const res = await request('POST', `/api/servers/${serverAId}/restart-xray`, {}, userTokenA);
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.success, true);
+  assert.match(res.body.message, /restarted/i);
+  if (res.body.status) {
+    assert.equal(res.body.status.xray.state, 'running');
+  }
+});
+
+
 test('Inbounds Proxy: GET /api/servers/:id/inbounds fetches live inbounds', async () => {
   const res = await request('GET', `/api/servers/${serverAId}/inbounds`, null, userTokenA);
 

@@ -16,10 +16,13 @@ import {
   HardDrive,
   Users,
   QrCode,
-  Link2
+  Link2,
+  Power,
+  PowerOff,
+  Loader2
 } from 'lucide-react';
 import { serversApi } from '../api/client';
-import { formatBytes, formatExpiry, isExpired } from '../utils/formatters';
+import { formatBytes, formatExpiry, isExpired, formatShortId } from '../utils/formatters';
 import EditClientModal from '../components/EditClientModal';
 import AddClientModal from '../components/AddClientModal';
 import ConfirmModal from '../components/ConfirmModal';
@@ -31,6 +34,7 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'active' | 'disabled'
 
   // Modals state
   const [editingClient, setEditingClient] = useState(null);
@@ -42,6 +46,13 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
 
   const [clientToReset, setClientToReset] = useState(null);
   const [resetLoading, setResetLoading] = useState(false);
+
+  // Single client toggle state
+  const [togglingClientId, setTogglingClientId] = useState(null);
+
+  // Bulk activate/deactivate state
+  const [bulkAction, setBulkAction] = useState(null); // 'activate_all' | 'deactivate_all' | null
+  const [bulkLoading, setBulkLoading] = useState(false);
 
   // Copy feedback state
   const [copiedId, setCopiedId] = useState(null);
@@ -84,12 +95,84 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Client Update Handler
+  // Client Update Handler (from Edit Modal)
   const handleClientUpdated = (updatedClient) => {
     setClients((prev) =>
       prev.map((c) => (c.id === updatedClient.id ? { ...c, ...updatedClient } : c))
     );
     showToast(`Client "${updatedClient.email || updatedClient.id}" updated successfully`);
+  };
+
+  // 1-Click Activate / Deactivate Single Client
+  const handleToggleEnable = async (client) => {
+    const currentEnabled = client.enable !== false;
+    const nextState = !currentEnabled;
+    setTogglingClientId(client.id);
+    try {
+      const res = await serversApi.updateClient(server._id, client.id, {
+        inboundId: inbound.id,
+        enable: nextState,
+        email: client.email
+      });
+
+      if (res.success) {
+        setClients((prev) =>
+          prev.map((c) => (c.id === client.id ? { ...c, enable: nextState } : c))
+        );
+        showToast(
+          nextState
+            ? `Client "${client.email || client.id}" activated`
+            : `Client "${client.email || client.id}" deactivated`
+        );
+      } else {
+        alert(res.error || 'Failed to update client status');
+      }
+    } catch (err) {
+      alert(err.response?.data?.error || err.message || 'Failed to update client status');
+    } finally {
+      setTogglingClientId(null);
+    }
+  };
+
+  // Bulk Activate / Deactivate All Clients on Inbound
+  const handleBulkToggle = async (targetState) => {
+    setBulkLoading(true);
+    try {
+      const clientsToUpdate = clients.filter((c) => (c.enable !== false) !== targetState);
+      if (clientsToUpdate.length === 0) {
+        showToast(`All clients are already ${targetState ? 'active' : 'disabled'}`);
+        setBulkAction(null);
+        return;
+      }
+
+      let successCount = 0;
+      await Promise.allSettled(
+        clientsToUpdate.map(async (c) => {
+          try {
+            const res = await serversApi.updateClient(server._id, c.id, {
+              inboundId: inbound.id,
+              enable: targetState,
+              email: c.email
+            });
+            if (res.success) successCount++;
+          } catch (_) {}
+        })
+      );
+
+      setClients((prev) =>
+        prev.map((c) => ({ ...c, enable: targetState }))
+      );
+      showToast(
+        targetState
+          ? `Activated ${successCount} client(s)`
+          : `Deactivated ${successCount} client(s)`
+      );
+      setBulkAction(null);
+    } catch (err) {
+      alert(err.response?.data?.error || err.message || 'Failed to update clients');
+    } finally {
+      setBulkLoading(false);
+    }
   };
 
   // Client Add Handler
@@ -132,9 +215,17 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
     }
   };
 
+  // Client counts
+  const activeCount = clients.filter((c) => c.enable !== false).length;
+  const disabledCount = clients.filter((c) => c.enable === false).length;
+
   // Filter clients
   const filteredClients = clients.filter((c) => {
-    const q = searchQuery.toLowerCase();
+    if (statusFilter === 'active' && c.enable === false) return false;
+    if (statusFilter === 'disabled' && c.enable !== false) return false;
+
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return true;
     return (
       (c.email && c.email.toLowerCase().includes(q)) ||
       (c.id && String(c.id).toLowerCase().includes(q))
@@ -177,6 +268,33 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
         </div>
 
         <div className="flex items-center gap-2.5">
+          {/* Quick Bulk Activate / Deactivate controls */}
+          {clients.length > 0 && (
+            <div className="hidden sm:flex items-center gap-1.5 bg-slate-900/60 p-1 border border-slate-800 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setBulkAction('activate_all')}
+                disabled={disabledCount === 0}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded-lg transition-all disabled:opacity-40 disabled:hover:bg-transparent"
+                title="Activate all disabled clients on this inbound"
+              >
+                <Power className="w-3.5 h-3.5" />
+                <span>Enable All</span>
+              </button>
+              <span className="text-slate-700">|</span>
+              <button
+                type="button"
+                onClick={() => setBulkAction('deactivate_all')}
+                disabled={activeCount === 0}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 rounded-lg transition-all disabled:opacity-40 disabled:hover:bg-transparent"
+                title="Deactivate all active clients on this inbound"
+              >
+                <PowerOff className="w-3.5 h-3.5" />
+                <span>Disable All</span>
+              </button>
+            </div>
+          )}
+
           <button
             onClick={handleRefresh}
             disabled={refreshing}
@@ -197,7 +315,7 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="relative flex-1 max-w-md">
           <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
             <Search className="w-4 h-4" />
@@ -211,8 +329,43 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
           />
         </div>
 
-        <div className="text-xs text-slate-400 font-medium">
-          Showing <span className="text-white font-bold">{filteredClients.length}</span> clients
+        {/* Status filter tabs */}
+        <div className="flex items-center gap-1 bg-slate-900/60 p-1 border border-slate-800 rounded-xl text-xs self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() => setStatusFilter('all')}
+            className={`px-3 py-1 rounded-lg font-medium transition-all ${
+              statusFilter === 'all'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            All ({clients.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('active')}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-medium transition-all ${
+              statusFilter === 'active'
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-sm'
+                : 'text-slate-400 hover:text-emerald-400 hover:bg-slate-800/60'
+            }`}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            Active ({activeCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('disabled')}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-medium transition-all ${
+              statusFilter === 'disabled'
+                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30 shadow-sm'
+                : 'text-slate-400 hover:text-rose-400 hover:bg-slate-800/60'
+            }`}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+            Disabled ({disabledCount})
+          </button>
         </div>
       </div>
 
@@ -240,15 +393,28 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
           <p className="text-xs text-slate-400 max-w-sm mx-auto mb-4">
             {searchQuery
               ? `No clients match the query "${searchQuery}"`
+              : statusFilter === 'disabled'
+              ? 'There are no disabled clients on this inbound.'
+              : statusFilter === 'active'
+              ? 'There are no active clients on this inbound.'
               : 'There are currently no clients registered on this inbound.'}
           </p>
-          <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-all"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>Create First Client</span>
-          </button>
+          {statusFilter !== 'all' ? (
+            <button
+              onClick={() => setStatusFilter('all')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl transition-all"
+            >
+              <span>View All Clients</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-all"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>Create First Client</span>
+            </button>
+          )}
         </div>
       ) : (
         <div className="rounded-2xl border border-slate-800 bg-slate-900/40 overflow-hidden shadow-xl">
@@ -296,12 +462,14 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
 
                       {/* UUID / Key with copy button */}
                       <td className="px-4 py-4">
-                        <div className="flex items-center gap-1.5 font-mono text-[11px] text-slate-400 bg-slate-950/60 px-2.5 py-1 rounded-lg border border-slate-800 max-w-xs">
-                          <span className="truncate">{client.id}</span>
+                        <div className="inline-flex items-center gap-1.5 font-mono text-[11px] text-slate-400 bg-slate-950/60 px-2 py-1 rounded-lg border border-slate-800">
+                          <span title={client.id} className="cursor-default hover:text-slate-200 transition-colors">
+                            {formatShortId(client.id)}
+                          </span>
                           <button
                             onClick={() => handleCopyId(client.id)}
                             className="p-1 text-slate-500 hover:text-white rounded hover:bg-slate-800 transition-colors shrink-0"
-                            title="Copy UUID / Key"
+                            title={`Copy full UUID (${client.id})`}
                           >
                             {copiedId === client.id ? (
                               <Check className="w-3.5 h-3.5 text-emerald-400" />
@@ -312,19 +480,46 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
                         </div>
                       </td>
 
-                      {/* Status */}
+                      {/* Status with interactive 1-click toggle switch */}
                       <td className="px-4 py-4">
-                        {client.enable ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                            Active
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={client.enable !== false}
+                          aria-label={`${client.enable !== false ? 'Deactivate' : 'Activate'} client ${client.email || client.id}`}
+                          disabled={togglingClientId === client.id}
+                          onClick={() => handleToggleEnable(client)}
+                          className={`group inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all duration-200 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
+                            client.enable !== false
+                              ? 'bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30 text-emerald-300'
+                              : 'bg-slate-800/80 hover:bg-slate-800 border-slate-700 text-slate-400'
+                          }`}
+                          title={`Click to ${client.enable !== false ? 'Deactivate' : 'Activate'} this client`}
+                        >
+                          {togglingClientId === client.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                          ) : (
+                            <span
+                              className={`w-2 h-2 rounded-full transition-all ${
+                                client.enable !== false
+                                  ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'
+                                  : 'bg-slate-500'
+                              }`}
+                            />
+                          )}
+                          <span>{client.enable !== false ? 'Active' : 'Disabled'}</span>
+                          <span
+                            className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full p-0.5 transition-colors duration-200 ease-in-out ${
+                              client.enable !== false ? 'bg-emerald-600' : 'bg-slate-700'
+                            }`}
+                          >
+                            <span
+                              className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform duration-200 ease-in-out shadow-sm ${
+                                client.enable !== false ? 'translate-x-3' : 'translate-x-0'
+                              }`}
+                            />
                           </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                            <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
-                            Disabled
-                          </span>
-                        )}
+                        </button>
                       </td>
 
                       {/* Usage & Bandwidth Quota */}
@@ -471,6 +666,22 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
         confirmText="Reset Traffic"
         danger={false}
         loading={resetLoading}
+      />
+
+      {/* Confirm Bulk Action Modal */}
+      <ConfirmModal
+        isOpen={!!bulkAction}
+        onClose={() => setBulkAction(null)}
+        onConfirm={() => handleBulkToggle(bulkAction === 'activate_all')}
+        title={bulkAction === 'activate_all' ? 'Activate All Clients' : 'Deactivate All Clients'}
+        message={
+          bulkAction === 'activate_all'
+            ? `Are you sure you want to activate all ${disabledCount} disabled client(s) on inbound #${inbound.id}? They will be permitted to connect to the VPN immediately.`
+            : `Are you sure you want to deactivate all ${activeCount} active client(s) on inbound #${inbound.id}? This will immediately disconnect all active VPN connections on this inbound.`
+        }
+        confirmText={bulkAction === 'activate_all' ? 'Activate All' : 'Deactivate All'}
+        danger={bulkAction === 'deactivate_all'}
+        loading={bulkLoading}
       />
     </div>
   );

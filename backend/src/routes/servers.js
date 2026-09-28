@@ -484,6 +484,54 @@ router.get('/:id/status', proxyLimiter, async (req, res) => {
   }
 });
 
+/**
+ * POST /api/servers/:id/restart-xray
+ * Live Xray core engine restart proxy.
+ */
+router.post('/:id/restart-xray', proxyLimiter, async (req, res) => {
+  try {
+    const server = await getOwnedServerWithCredentials(req.params.id, req.user._id);
+    if (!server) {
+      return res.status(404).json({ success: false, error: 'Server not found or access denied' });
+    }
+
+    const authConfig = getDecryptedAuthConfig(server);
+
+    try {
+      const restartResult = await panelService.restartXray(server.panelUrl, authConfig);
+
+      server.status = 'online';
+      server.lastConnectedAt = new Date();
+      if (!server.telemetry) server.telemetry = {};
+      server.telemetry.xrayState = 'running';
+      await server.save();
+
+      // Attempt to retrieve fresh status immediately
+      let freshStatus = null;
+      try {
+        freshStatus = await panelService.getServerStatus(server.panelUrl, authConfig);
+      } catch (_) {}
+
+      return res.status(200).json({
+        success: true,
+        message: restartResult.message || 'Xray engine restarted successfully',
+        status: freshStatus
+      });
+    } catch (panelErr) {
+      return res.status(502).json({
+        success: false,
+        error: `Failed to restart Xray engine on panel: ${panelErr.message}`
+      });
+    }
+  } catch (error) {
+    console.error('[Restart Xray Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to restart Xray engine'
+    });
+  }
+});
+
 
 /**
  * GET /api/servers/:id/inbounds

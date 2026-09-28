@@ -34,31 +34,34 @@ export default function AlertSettingsModal({ isOpen, onClose, server, onSaved })
   const [testResult, setTestResult] = useState(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
+  // Initialize form state ONLY when opened or when server ID changes
   useEffect(() => {
-    if (server) {
-      const applyMonitoring = (m) => {
-        setEnabled(m.enabled !== false);
-        setEmailAlerts(m.emailAlerts !== false);
-        setNotifyOnDown(m.notifyOnDown !== false);
-        setNotifyOnRecover(m.notifyOnRecover !== false);
-        setNotifyOnHighResource(m.notifyOnHighResource === true);
-        setCpuThreshold(m.cpuThreshold || 90);
-        setRamThreshold(m.ramThreshold || 90);
-        setConsecutiveFails(m.consecutiveFails || 1);
-      };
-
-      applyMonitoring(server.monitoring || {});
+    if (isOpen && server) {
+      const m = server.monitoring || {};
+      setEnabled(m.enabled !== false);
+      setEmailAlerts(m.emailAlerts !== false);
+      setNotifyOnDown(m.notifyOnDown !== false);
+      setNotifyOnRecover(m.notifyOnRecover !== false);
+      setNotifyOnHighResource(m.notifyOnHighResource === true);
+      setCpuThreshold(m.cpuThreshold || 90);
+      setRamThreshold(m.ramThreshold || 90);
+      setConsecutiveFails(m.consecutiveFails || 1);
       setTestResult(null);
       setSaveSuccess(false);
-
-      // Always fetch fresh from backend to avoid stale props
-      serversApi.get(server._id).then((res) => {
-        if (res.success && res.server?.monitoring) {
-          applyMonitoring(res.server.monitoring);
-        }
-      }).catch(() => {});
     }
-  }, [server, isOpen]);
+  }, [isOpen, server?._id]);
+
+  // Close on Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -114,7 +117,10 @@ export default function AlertSettingsModal({ isOpen, onClose, server, onSaved })
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80"
+      onClick={onClose}
+    >
       <div
         className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
@@ -158,7 +164,7 @@ export default function AlertSettingsModal({ isOpen, onClose, server, onSaved })
                 onChange={(e) => setEmailAlerts(e.target.checked)}
                 className="sr-only peer"
               />
-              <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+              <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-transform after:duration-200 peer-checked:bg-indigo-600"></div>
             </label>
           </div>
 

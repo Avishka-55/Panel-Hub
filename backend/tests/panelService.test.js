@@ -137,3 +137,15 @@ test('panelService.deleteClient: removes client from inbound', async () => {
   assert.equal(bob, undefined, 'Bob should be deleted from inbound');
 });
 
+test('panelService.restartXray: restarts Xray service on panel', async () => {
+  const result = await panelService.restartXray(
+    mockServer.url,
+    'admin',
+    'password123'
+  );
+
+  assert.equal(result.success, true);
+  assert.match(result.message, /restarted/i);
+});
+
+

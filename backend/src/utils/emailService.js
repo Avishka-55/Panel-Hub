@@ -85,6 +85,11 @@ function getEmailTemplate({ title, subtitle, otp, warning, note }) {
  * Dispatches an email via Brevo REST API, SMTP, or Dev Console.
  */
 async function sendEmail({ to, subject, html, text }) {
+  // Never consume production Brevo email quota during test suite execution
+  if (process.env.NODE_ENV === 'test') {
+    return { success: true, messageId: 'test-mock-msg-id', provider: 'test_mock' };
+  }
+
   const sender = getEmailSender();
   const brevoApiKey = process.env.BREVO_API_KEY;
 
