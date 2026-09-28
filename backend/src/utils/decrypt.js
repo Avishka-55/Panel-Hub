@@ -40,10 +40,16 @@ function decrypt(ciphertextOrObj, ivHex, authTagHex) {
 
   decipher.setAuthTag(Buffer.from(authTag, 'hex'));
 
-  let decrypted = decipher.update(ciphertext, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
-
-  return decrypted;
+  try {
+    let decrypted = decipher.update(ciphertext, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  } catch (err) {
+    if (err.message && (err.message.includes('Unsupported state') || err.message.includes('unable to authenticate'))) {
+      throw new Error('Credential decryption failed: Master encryption key mismatch or corrupted credentials');
+    }
+    throw err;
+  }
 }
 
 module.exports = {

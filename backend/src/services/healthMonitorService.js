@@ -170,10 +170,19 @@ async function checkServer(server) {
     return { serverId: server._id, nickname: server.nickname, status: 'online', telemetry: server.telemetry };
 
   } catch (err) {
+    const isCryptoMismatch = err.message && (
+      err.message.includes('decryption failed') ||
+      err.message.includes('Master key mismatch') ||
+      err.message.includes('Unsupported state') ||
+      err.message.includes('unable to authenticate')
+    );
+
     // --- FAILURE: SERVER IS OFFLINE / UNREACHABLE ---
     server.failureCount = (server.failureCount || 0) + 1;
     server.lastCheckedAt = new Date();
-    server.lastError = err.message;
+    server.lastError = isCryptoMismatch
+      ? 'Credential decryption failed: Master key mismatch. Please re-enter panel credentials.'
+      : err.message;
 
     // Transition to offline
     if (server.status !== 'offline') {
@@ -181,8 +190,8 @@ async function checkServer(server) {
       server.lastStatusChangeAt = new Date();
     }
 
-    // Send Down Alert if not already alerted and threshold met
-    const shouldNotifyDown = alertsEnabled && (server.monitoring?.notifyOnDown !== false);
+    // Send Down Alert if not already alerted and threshold met (suppress if local crypto key mismatch)
+    const shouldNotifyDown = alertsEnabled && (server.monitoring?.notifyOnDown !== false) && !isCryptoMismatch;
     const consecutiveThreshold = server.monitoring?.consecutiveFails ?? 1;
 
     if (shouldNotifyDown && ownerEmail && server.failureCount >= consecutiveThreshold && server.lastAlertState !== 'down') {
@@ -199,6 +208,8 @@ async function checkServer(server) {
       } catch (emailErr) {
         console.error('[Health Monitor Alert Error]:', emailErr.message);
       }
+    } else if (isCryptoMismatch) {
+      console.warn(`[Health Monitor] Server "${server.nickname}" skipped: Master encryption key mismatch.`);
     }
 
     await server.save();

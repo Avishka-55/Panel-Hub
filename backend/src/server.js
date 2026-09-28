@@ -16,10 +16,18 @@ async function startServer() {
 
     // Start Autonomous Health & Telemetry Monitor (5 minutes default)
     const checkIntervalMinutes = parseInt(process.env.HEALTH_CHECK_INTERVAL_MINUTES || '5', 10);
-    startHealthMonitor(checkIntervalMinutes);
+    if (process.env.ENABLE_BACKGROUND_MONITOR !== 'false') {
+      startHealthMonitor(checkIntervalMinutes);
+    } else {
+      console.log('[Health Monitor] Background health monitor disabled via ENABLE_BACKGROUND_MONITOR=false');
+    }
 
     // Start Scheduled Daily Operations & Health Report Scheduler
-    startDailyReportScheduler();
+    if (process.env.ENABLE_DAILY_REPORT !== 'false') {
+      startDailyReportScheduler();
+    } else {
+      console.log('[Daily Report] Scheduled daily reports disabled via ENABLE_DAILY_REPORT=false');
+    }
 
     // In development mode, also optionally launch a mock 3x-ui panel for immediate out-of-the-box testing
     if (process.env.START_MOCK_PANEL === 'true' || config.nodeEnv === 'development') {
