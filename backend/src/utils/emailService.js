@@ -522,6 +522,125 @@ async function sendDailyReportEmail({ to, dateStr, summary, serverBreakdown }) {
   return sendEmail({ to, subject, html, text });
 }
 
+/**
+ * Dispatches an account password changed security notice.
+ */
+async function sendPasswordChangedNotification(to) {
+  const subject = '🔒 Security Notice: Your PanelHub password was changed';
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Password Changed</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #090d16; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #f1f5f9;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #090d16; padding: 40px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" style="max-width: 480px; background: #0f172a; border: 1px solid #1e293b; border-radius: 16px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);">
+          <tr>
+            <td style="padding: 32px 32px 20px 32px; text-align: center; border-bottom: 1px solid #1e293b;">
+              <div style="display: inline-block; padding: 10px 14px; background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 12px; margin-bottom: 16px;">
+                <span style="font-size: 20px; font-weight: 800; color: #818cf8;">Panel<span style="color: #ffffff;">Hub</span></span>
+              </div>
+              <h1 style="margin: 0; font-size: 20px; font-weight: 700; color: #ffffff;">Password Changed Successfully</h1>
+              <p style="margin: 8px 0 0 0; font-size: 13px; color: #94a3b8;">Security Notification for ${to}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 28px 32px; text-align: left;">
+              <p style="margin: 0 0 16px 0; font-size: 13px; color: #cbd5e1; line-height: 1.6;">
+                The password for your PanelHub account (<strong>${to}</strong>) was recently updated.
+              </p>
+              <div style="padding: 14px 18px; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 10px; margin-bottom: 20px;">
+                <p style="margin: 0; font-size: 12px; color: #34d399; line-height: 1.5;">
+                  ✔ If you performed this change, no further action is required.
+                </p>
+              </div>
+              <p style="margin: 0; font-size: 12px; color: #94a3b8; line-height: 1.5;">
+                If you did not authorize this change, please immediately reset your password using the "Forgot Password" link on the login page.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 18px 32px; background: #090d16; border-top: 1px solid #1e293b; text-align: center;">
+              <p style="margin: 0; font-size: 11px; color: #64748b;">
+                Protected by PanelHub AES-256-GCM Vault &bull; Multi-Tenant Isolation
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `.trim();
+
+  const text = `🔒 [PanelHub Security Alert]\n\nThe password for your PanelHub account (${to}) was changed successfully.\n\nIf you made this change, no action is needed.\nIf you did not make this change, please immediately perform a password reset.`;
+
+  return sendEmail({ to, subject, html, text });
+}
+
+/**
+ * Dispatches an account deletion confirmation notice.
+ */
+async function sendAccountDeletedNotification(to) {
+  const subject = '⚠️ Account Deleted: PanelHub Confirmation';
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Account Deleted</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #090d16; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #f1f5f9;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #090d16; padding: 40px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" style="max-width: 480px; background: #0f172a; border: 1px solid #1e293b; border-radius: 16px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);">
+          <tr>
+            <td style="padding: 32px 32px 20px 32px; text-align: center; border-bottom: 1px solid #1e293b;">
+              <div style="display: inline-block; padding: 10px 14px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 12px; margin-bottom: 16px;">
+                <span style="font-size: 20px; font-weight: 800; color: #f87171;">Panel<span style="color: #ffffff;">Hub</span></span>
+              </div>
+              <h1 style="margin: 0; font-size: 20px; font-weight: 700; color: #ffffff;">Account Successfully Deleted</h1>
+              <p style="margin: 8px 0 0 0; font-size: 13px; color: #94a3b8;">Confirmation for ${to}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 28px 32px; text-align: left;">
+              <p style="margin: 0 0 16px 0; font-size: 13px; color: #cbd5e1; line-height: 1.6;">
+                Your PanelHub tenant account (<strong>${to}</strong>) and all encrypted 3x-ui node configurations have been permanently deleted from our database.
+              </p>
+              <p style="margin: 0; font-size: 12px; color: #94a3b8; line-height: 1.5;">
+                Your remote servers continue running untouched. If you wish to use PanelHub again in the future, you may register a new account at any time.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 18px 32px; background: #090d16; border-top: 1px solid #1e293b; text-align: center;">
+              <p style="margin: 0; font-size: 11px; color: #64748b;">
+                PanelHub Security &bull; Zero DB residual client data
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `.trim();
+
+  const text = `⚠️ [PanelHub Confirmation]\n\nYour PanelHub account (${to}) and all encrypted server credentials have been permanently deleted.\n\nThank you for using PanelHub.`;
+
+  return sendEmail({ to, subject, html, text });
+}
+
 module.exports = {
   sendEmail,
   sendVerificationOtp,
@@ -530,5 +649,7 @@ module.exports = {
   sendServerRecoveredAlert,
   sendHighResourceAlert,
   sendTestAlertEmail,
-  sendDailyReportEmail
+  sendDailyReportEmail,
+  sendPasswordChangedNotification,
+  sendAccountDeletedNotification
 };

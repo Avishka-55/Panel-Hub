@@ -285,13 +285,14 @@ export default function DashboardPage({ onSelectServer, onServerCountChange }) {
           </button>
         </div>
       ) : (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/40 overflow-hidden shadow-xl">
-          <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-white">Configured VPN Panels</h3>
-            <span className="text-xs text-slate-500">{servers.length} instances</span>
-          </div>
+        <>
+          {/* Mobile Server Cards View (< md): Independent individual cards with distinct spacing & borders */}
+          <div className="md:hidden space-y-3.5">
+            <div className="flex items-center justify-between px-1">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Connected Panels</h3>
+              <span className="text-xs text-slate-500 font-mono">{servers.length} active</span>
+            </div>
 
-          <div className="divide-y divide-slate-800/80">
             {servers.map((server) => {
               const isTesting = testingServerId === server._id;
               const isOnline = server.status === 'online';
@@ -300,11 +301,18 @@ export default function DashboardPage({ onSelectServer, onServerCountChange }) {
                 <div
                   key={server._id}
                   onClick={() => onSelectServer(server)}
-                  className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-800/40 cursor-pointer transition-colors group"
+                  className={`p-4 rounded-2xl border space-y-3.5 shadow-lg transition-all cursor-pointer ${
+                    isOnline
+                      ? 'bg-gradient-to-r from-emerald-950/20 via-slate-900/90 to-slate-900/90 border-emerald-500/30'
+                      : server.status === 'error' || server.status === 'offline'
+                      ? 'bg-gradient-to-r from-rose-950/20 via-slate-900/90 to-slate-900/90 border-rose-500/30'
+                      : 'bg-slate-900/80 border-slate-800 hover:border-slate-700/80'
+                  }`}
                 >
-                  <div className="flex items-start sm:items-center gap-3.5">
+                  {/* Top: Icon + Nickname + Status */}
+                  <div className="flex items-start gap-3 min-w-0">
                     <div
-                      className={`p-2.5 rounded-xl border mt-0.5 sm:mt-0 ${
+                      className={`p-2.5 rounded-xl border shrink-0 ${
                         isOnline
                           ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                           : server.status === 'error' || server.status === 'offline'
@@ -315,72 +323,58 @@ export default function DashboardPage({ onSelectServer, onServerCountChange }) {
                       <Server className="w-5 h-5" />
                     </div>
 
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-sm text-white group-hover:text-indigo-400 transition-colors">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-sm text-white truncate max-w-[190px]">
                           {server.nickname}
                         </span>
 
                         {isOnline ? (
-                          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                             Online
                           </span>
                         ) : server.status === 'error' || server.status === 'offline' ? (
-                          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20 shrink-0">
                             <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
                             Offline
                           </span>
                         ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700 shrink-0">
                             Untested
-                          </span>
-                        )}
-
-                        {server.authType === 'api_key' ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                            API Token
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">
-                            Password
                           </span>
                         )}
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-xs text-slate-400">
-                        <span className="font-mono text-slate-300">{server.panelUrl}</span>
-                        <span>•</span>
-                        {server.authType === 'api_key' ? (
-                          <span>Auth: <strong className="text-indigo-400">Bearer Token</strong></span>
-                        ) : (
-                          <span>User: <strong className="text-slate-300">{server.panelUsername}</strong></span>
-                        )}
-                        <span>•</span>
-                        <span>
-                          Inbounds: <strong className="text-slate-200">{server.inboundCount || 0}</strong>
+                      {/* Inbounds & Last sync */}
+                      <div className="flex items-center gap-2.5 mt-1 text-xs text-slate-400">
+                        <span className="flex items-center gap-1 font-medium text-slate-300">
+                          <HardDrive className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>{server.inboundCount || 0} Inbounds</span>
                         </span>
+
                         {server.lastConnectedAt && (
                           <>
-                            <span>•</span>
-                            <span className="flex items-center gap-1 text-slate-500">
+                            <span className="text-slate-600">•</span>
+                            <span className="flex items-center gap-1 text-[11px] text-slate-500">
                               <Clock className="w-3 h-3" />
-                              {new Date(server.lastConnectedAt).toLocaleTimeString([], {
+                              <span>{new Date(server.lastConnectedAt).toLocaleTimeString([], {
                                 hour: '2-digit',
                                 minute: '2-digit'
-                              })}
+                              })}</span>
                             </span>
                           </>
                         )}
                       </div>
 
+                      {/* Telemetry metrics (CPU, RAM, Xray) */}
                       {server.telemetry && server.telemetry.cpu !== undefined && isOnline && (
                         <div className="flex flex-wrap items-center gap-2 mt-2">
-                          <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800/90 text-slate-300 border border-slate-700/60">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-slate-950/60 text-slate-300 border border-slate-800/80">
                             <Zap className="w-3 h-3 text-amber-400" />
                             CPU: <strong className={server.telemetry.cpu >= 80 ? 'text-rose-400' : 'text-slate-200'}>{server.telemetry.cpu}%</strong>
                           </span>
-                          <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800/90 text-slate-300 border border-slate-700/60">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-slate-950/60 text-slate-300 border border-slate-800/80">
                             RAM: <strong className={server.telemetry.memPercent >= 80 ? 'text-rose-400' : 'text-slate-200'}>{server.telemetry.memPercent}%</strong>
                           </span>
                           {server.telemetry.xrayState && (
@@ -392,68 +386,247 @@ export default function DashboardPage({ onSelectServer, onServerCountChange }) {
                       )}
 
                       {server.lastError && (
-                        <p className="mt-1 text-[11px] text-rose-400/90 truncate max-w-md">
+                        <p className="mt-1.5 text-[11px] text-rose-400/90 break-words">
                           Error: {server.lastError}
                         </p>
                       )}
                     </div>
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-2 self-end md:self-center" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setServerForAlertModal(server);
-                      }}
-                      className={`p-1.5 rounded-lg border transition-all ${
-                        server.monitoring?.emailAlerts !== false
-                          ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20 hover:bg-emerald-500/20'
-                          : 'text-slate-500 bg-slate-800/40 border-slate-700/50 hover:text-slate-300'
-                      }`}
-                      title="Customize Brevo Alert Rules & Notifications"
-                    >
-                      {server.monitoring?.emailAlerts !== false ? (
-                        <Bell className="w-3.5 h-3.5" />
-                      ) : (
-                        <BellOff className="w-3.5 h-3.5" />
-                      )}
-                    </button>
+                  {/* Actions row with distinct separator line */}
+                  <div
+                    className="flex items-center justify-between gap-2 pt-2.5 border-t border-slate-800/80"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setServerForAlertModal(server);
+                        }}
+                        className={`p-2 rounded-xl border transition-all ${
+                          server.monitoring?.emailAlerts !== false
+                            ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20 hover:bg-emerald-500/20'
+                            : 'text-slate-500 bg-slate-800/40 border-slate-700/50 hover:text-slate-300'
+                        }`}
+                        title="Customize Brevo Alert Rules & Notifications"
+                      >
+                        {server.monitoring?.emailAlerts !== false ? (
+                          <Bell className="w-3.5 h-3.5" />
+                        ) : (
+                          <BellOff className="w-3.5 h-3.5" />
+                        )}
+                      </button>
 
-                    <button
-                      onClick={(e) => handleTestConnection(e, server._id)}
-                      disabled={isTesting}
-                      className="px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700 border border-slate-700/80 rounded-lg transition-all"
-                      title="Test live connection to 3x-ui"
-                    >
-                      {isTesting ? (
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <span>Test Link</span>
-                      )}
-                    </button>
+                      <button
+                        onClick={(e) => handleTestConnection(e, server._id)}
+                        disabled={isTesting}
+                        className="px-3 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700 border border-slate-700/80 rounded-xl transition-all"
+                        title="Test live connection to 3x-ui"
+                      >
+                        {isTesting ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <span>Test Link</span>
+                        )}
+                      </button>
+                    </div>
 
-                    <button
-                      onClick={() => onSelectServer(server)}
-                      className="flex items-center gap-1 px-3.5 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg shadow-sm transition-all"
-                    >
-                      <span>Inbounds</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => onSelectServer(server)}
+                        className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-sm transition-all"
+                      >
+                        <span>Inbounds</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
 
-                    <button
-                      onClick={() => setServerToDelete(server)}
-                      className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
-                      title="Remove Server"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                      <button
+                        onClick={() => setServerToDelete(server)}
+                        className="p-2 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl transition-colors"
+                        title="Remove Server"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
             })}
           </div>
-        </div>
+
+          {/* Desktop Table/List View (>= md) */}
+          <div className="hidden md:block rounded-2xl border border-slate-800 bg-slate-900/40 overflow-hidden shadow-xl">
+            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-white">Configured VPN Panels</h3>
+              <span className="text-xs text-slate-500">{servers.length} instances</span>
+            </div>
+
+            <div className="divide-y divide-slate-800/80">
+              {servers.map((server) => {
+                const isTesting = testingServerId === server._id;
+                const isOnline = server.status === 'online';
+
+                return (
+                  <div
+                    key={server._id}
+                    onClick={() => onSelectServer(server)}
+                    className="p-5 flex items-center justify-between gap-4 hover:bg-slate-800/40 cursor-pointer transition-colors group"
+                  >
+                    <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                      <div
+                        className={`p-2.5 rounded-xl border shrink-0 ${
+                          isOnline
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                            : server.status === 'error' || server.status === 'offline'
+                            ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                            : 'bg-slate-800 text-slate-400 border-slate-700'
+                        }`}
+                      >
+                        <Server className="w-5 h-5" />
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-sm text-white group-hover:text-indigo-400 transition-colors">
+                            {server.nickname}
+                          </span>
+
+                          {isOnline ? (
+                            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                              Online
+                            </span>
+                          ) : server.status === 'error' || server.status === 'offline' ? (
+                            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                              Offline
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+                              Untested
+                            </span>
+                          )}
+
+                          {server.authType === 'api_key' ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                              API Token
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+                              Password
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-x-4 gap-y-1 mt-1 text-xs text-slate-400">
+                          <span className="font-mono text-slate-300">{server.panelUrl}</span>
+                          <span>•</span>
+                          <span>
+                            {server.authType === 'api_key' ? (
+                              <>Auth: <strong className="text-indigo-400">Bearer Token</strong></>
+                            ) : (
+                              <>User: <strong className="text-slate-300">{server.panelUsername}</strong></>
+                            )}
+                          </span>
+                          <span>•</span>
+                          <span>
+                            Inbounds: <strong className="text-slate-200">{server.inboundCount || 0}</strong>
+                          </span>
+                          {server.lastConnectedAt && (
+                            <>
+                              <span>•</span>
+                              <span className="flex items-center gap-1 text-slate-500">
+                                <Clock className="w-3 h-3" />
+                                <span>{new Date(server.lastConnectedAt).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}</span>
+                              </span>
+                            </>
+                          )}
+                        </div>
+
+                        {server.telemetry && server.telemetry.cpu !== undefined && isOnline && (
+                          <div className="flex items-center gap-2 mt-2">
+                            <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800/90 text-slate-300 border border-slate-700/60">
+                              <Zap className="w-3 h-3 text-amber-400" />
+                              CPU: <strong className={server.telemetry.cpu >= 80 ? 'text-rose-400' : 'text-slate-200'}>{server.telemetry.cpu}%</strong>
+                            </span>
+                            <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800/90 text-slate-300 border border-slate-700/60">
+                              RAM: <strong className={server.telemetry.memPercent >= 80 ? 'text-rose-400' : 'text-slate-200'}>{server.telemetry.memPercent}%</strong>
+                            </span>
+                            {server.telemetry.xrayState && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                Xray: {server.telemetry.xrayState}
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {server.lastError && (
+                          <p className="mt-1 text-[11px] text-rose-400/90 truncate max-w-md">
+                            Error: {server.lastError}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setServerForAlertModal(server);
+                        }}
+                        className={`p-1.5 rounded-lg border transition-all ${
+                          server.monitoring?.emailAlerts !== false
+                            ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20 hover:bg-emerald-500/20'
+                            : 'text-slate-500 bg-slate-800/40 border-slate-700/50 hover:text-slate-300'
+                        }`}
+                        title="Customize Brevo Alert Rules & Notifications"
+                      >
+                        {server.monitoring?.emailAlerts !== false ? (
+                          <Bell className="w-3.5 h-3.5" />
+                        ) : (
+                          <BellOff className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+
+                      <button
+                        onClick={(e) => handleTestConnection(e, server._id)}
+                        disabled={isTesting}
+                        className="px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700 border border-slate-700/80 rounded-lg transition-all"
+                        title="Test live connection to 3x-ui"
+                      >
+                        {isTesting ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <span>Test Link</span>
+                        )}
+                      </button>
+
+                      <button
+                        onClick={() => onSelectServer(server)}
+                        className="flex items-center gap-1 px-3.5 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg shadow-sm transition-all"
+                      >
+                        <span>Inbounds</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        onClick={() => setServerToDelete(server)}
+                        className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+                        title="Remove Server"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
       )}
 
       {/* Add Server Modal */}

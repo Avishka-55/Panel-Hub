@@ -246,24 +246,24 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
 
       {/* Breadcrumb Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
           <button
             onClick={onBack}
-            className="p-2 text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 rounded-xl transition-all"
+            className="p-2 text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 rounded-xl transition-all shrink-0"
             title="Back to Inbounds"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <div>
-            <div className="flex items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs text-slate-400">{server.nickname}</span>
               <span className="text-xs text-slate-600">/</span>
-              <h2 className="text-xl font-bold text-white tracking-tight">{inbound.remark}</h2>
-              <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 uppercase">
+              <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight truncate max-w-[200px] sm:max-w-none">{inbound.remark}</h2>
+              <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 uppercase shrink-0">
                 {inbound.protocol} : {inbound.port}
               </span>
             </div>
-            <p className="text-xs text-slate-400 font-mono mt-0.5">
+            <p className="text-xs text-slate-400 font-mono mt-0.5 truncate">
               Inbound #{inbound.id} • Live Client Management
             </p>
           </div>
@@ -332,11 +332,11 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
         </div>
 
         {/* Status filter tabs */}
-        <div className="flex items-center gap-1 bg-slate-900/60 p-1 border border-slate-800 rounded-xl text-xs self-start sm:self-auto">
+        <div className="flex items-center gap-1 bg-slate-900/60 p-1 border border-slate-800 rounded-xl text-xs self-start sm:self-auto overflow-x-auto max-w-full">
           <button
             type="button"
             onClick={() => setStatusFilter('all')}
-            className={`px-3 py-1 rounded-lg font-medium transition-all ${
+            className={`px-3 py-1 rounded-lg font-medium transition-all whitespace-nowrap ${
               statusFilter === 'all'
                 ? 'bg-indigo-600 text-white shadow-sm'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
@@ -347,7 +347,7 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
           <button
             type="button"
             onClick={() => setStatusFilter('online')}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-medium transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-medium transition-all whitespace-nowrap ${
               statusFilter === 'online'
                 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-sm'
                 : 'text-slate-400 hover:text-emerald-400 hover:bg-slate-800/60'
@@ -363,7 +363,7 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
           <button
             type="button"
             onClick={() => setStatusFilter('active')}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-medium transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-medium transition-all whitespace-nowrap ${
               statusFilter === 'active'
                 ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 shadow-sm'
                 : 'text-slate-400 hover:text-indigo-400 hover:bg-slate-800/60'
@@ -375,7 +375,7 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
           <button
             type="button"
             onClick={() => setStatusFilter('disabled')}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-medium transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-medium transition-all whitespace-nowrap ${
               statusFilter === 'disabled'
                 ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30 shadow-sm'
                 : 'text-slate-400 hover:text-rose-400 hover:bg-slate-800/60'
@@ -435,8 +435,220 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
           )}
         </div>
       ) : (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/40 overflow-hidden shadow-xl">
-          <div className="overflow-x-auto">
+        <>
+          {/* Mobile Client Cards View (< md): Separate standalone cards with distinct borders & spacing */}
+          <div className="md:hidden space-y-3.5">
+            {filteredClients.map((client) => {
+              const usedBytes = (client.up || 0) + (client.down || 0);
+              const totalQuota = client.totalGB || 0;
+              const percentUsed =
+                totalQuota > 0 ? Math.min(100, Math.round((usedBytes / totalQuota) * 100)) : 0;
+              const expired = isExpired(client.expiryTime);
+
+              return (
+                <div
+                  key={client.id}
+                  className={`p-4 rounded-2xl border space-y-3.5 shadow-lg transition-all ${
+                    client.isOnline
+                      ? 'bg-gradient-to-r from-emerald-950/20 via-slate-900/90 to-slate-900/90 border-emerald-500/30'
+                      : client.enable === false
+                      ? 'bg-slate-900/50 border-slate-800/70 opacity-75'
+                      : 'bg-slate-900/80 border-slate-800 hover:border-slate-700/80'
+                  }`}
+                >
+                  {/* Row 1: Status Icon + Email + 1-Click Toggle */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      {/* Live Online / Offline Small Icon */}
+                      {client.isOnline ? (
+                        <span
+                          className="relative flex h-2.5 w-2.5 shrink-0"
+                          title="Client is ONLINE (actively tunneling data)"
+                        >
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.9)]"></span>
+                        </span>
+                      ) : (
+                        <span
+                          className={`w-2.5 h-2.5 rounded-full shrink-0 border ${
+                            client.enable === false
+                              ? 'bg-rose-500/20 border-rose-500/40'
+                              : 'bg-slate-600/70 border-slate-500/40'
+                          }`}
+                          title={client.enable === false ? 'Client is disabled' : 'Client is offline'}
+                        />
+                      )}
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-sm text-white truncate max-w-[180px]">
+                            {client.email}
+                          </span>
+                          {client.isOnline && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 uppercase tracking-wider">
+                              ONLINE
+                            </span>
+                          )}
+                        </div>
+                        {client.lastOnline && (
+                          <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+                            Last online: {formatRelativeTime(client.lastOnline)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 1-Click Activate / Deactivate Toggle */}
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={client.enable !== false}
+                      aria-label={`${client.enable !== false ? 'Deactivate' : 'Activate'} client ${client.email || client.id}`}
+                      disabled={togglingClientId === client.id}
+                      onClick={() => handleToggleEnable(client)}
+                      className={`group inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all duration-200 cursor-pointer shrink-0 disabled:opacity-60 disabled:cursor-not-allowed ${
+                        client.enable !== false
+                          ? 'bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30 text-emerald-300'
+                          : 'bg-slate-800/80 hover:bg-slate-800 border-slate-700 text-slate-400'
+                      }`}
+                    >
+                      {togglingClientId === client.id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                      ) : (
+                        <span
+                          className={`w-2 h-2 rounded-full transition-all ${
+                            client.enable !== false
+                              ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'
+                              : 'bg-slate-500'
+                          }`}
+                        />
+                      )}
+                      <span>{client.enable !== false ? 'Active' : 'Disabled'}</span>
+                      <span
+                        className={`relative inline-flex h-3.5 w-6 shrink-0 items-center rounded-full p-0.5 transition-colors duration-200 ease-in-out ${
+                          client.enable !== false ? 'bg-emerald-600' : 'bg-slate-700'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform duration-200 ease-in-out shadow-sm ${
+                            client.enable !== false ? 'translate-x-2.5' : 'translate-x-0'
+                          }`}
+                        />
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Row 2: UUID with copy button + Expiry date */}
+                  <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-950/60 border border-slate-800/60 text-xs">
+                    <div className="flex items-center gap-1.5 font-mono text-[11px] text-slate-400 min-w-0">
+                      <span className="text-[10px] text-slate-500 uppercase">UUID:</span>
+                      <span className="text-slate-300 truncate max-w-[130px]" title={client.id}>
+                        {formatShortId(client.id)}
+                      </span>
+                      <button
+                        onClick={() => handleCopyId(client.id)}
+                        className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition-colors shrink-0"
+                        title="Copy full UUID"
+                      >
+                        {copiedId === client.id ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="text-right text-[11px] font-mono shrink-0">
+                      <span className="text-[10px] text-slate-500 block uppercase">Expiry</span>
+                      <span className={expired ? 'text-rose-400 font-semibold' : 'text-slate-300'}>
+                        {formatExpiry(client.expiryTime)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Row 3: Bandwidth progress meter & Up/Down traffic */}
+                  <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/60 space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400 font-medium">Data Usage</span>
+                      <span className="font-mono text-slate-200 font-semibold">
+                        {formatBytes(usedBytes)} <span className="text-slate-500 font-normal">/ {totalQuota > 0 ? formatBytes(totalQuota) : 'Unlimited'}</span>
+                        {totalQuota > 0 && <span className="text-indigo-400 ml-1.5">({percentUsed}%)</span>}
+                      </span>
+                    </div>
+
+                    {totalQuota > 0 ? (
+                      <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${
+                            percentUsed > 90
+                              ? 'bg-rose-500'
+                              : percentUsed > 75
+                              ? 'bg-amber-500'
+                              : 'bg-indigo-500'
+                          }`}
+                          style={{ width: `${percentUsed}%` }}
+                        ></div>
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-emerald-400/80">No quota ceiling</div>
+                    )}
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono pt-0.5">
+                      <span className="flex items-center gap-1 text-emerald-400">
+                        <span>↑</span> {formatBytes(client.up)}
+                      </span>
+                      <span className="flex items-center gap-1 text-blue-400">
+                        <span>↓</span> {formatBytes(client.down)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Row 4: Action Toolbar with top divider line */}
+                  <div className="grid grid-cols-4 gap-2 pt-2.5 border-t border-slate-800/80">
+                    <button
+                      onClick={() => setQrModalClient(client)}
+                      className="flex flex-col items-center justify-center gap-1 py-2 px-1 text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-xl transition-all"
+                      title="Show QR Code, V2Ray URI & Subscription Link"
+                    >
+                      <QrCode className="w-3.5 h-3.5" />
+                      <span>QR Code</span>
+                    </button>
+
+                    <button
+                      onClick={() => setEditingClient(client)}
+                      className="flex flex-col items-center justify-center gap-1 py-2 px-1 text-[11px] font-medium text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 rounded-xl transition-all"
+                      title="Edit expiry, bandwidth, or status"
+                    >
+                      <Edit2 className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Edit</span>
+                    </button>
+
+                    <button
+                      onClick={() => setClientToReset(client)}
+                      className="flex flex-col items-center justify-center gap-1 py-2 px-1 text-[11px] font-medium text-slate-300 hover:text-amber-300 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 rounded-xl transition-all"
+                      title="Reset client traffic counter"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Reset</span>
+                    </button>
+
+                    <button
+                      onClick={() => setClientToDelete(client)}
+                      className="flex flex-col items-center justify-center gap-1 py-2 px-1 text-[11px] font-medium text-slate-300 hover:text-rose-400 bg-slate-800/80 hover:bg-rose-500/10 border border-slate-700/80 hover:border-rose-500/30 rounded-xl transition-all"
+                      title="Delete client from panel"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                      <span>Delete</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Desktop Table View (>= md) */}
+          <div className="hidden md:block rounded-2xl border border-slate-800 bg-slate-900/40 overflow-hidden shadow-xl">
+            <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-800/50 text-slate-400 border-b border-slate-800 uppercase tracking-wider font-semibold text-[10px]">
                 <tr>
@@ -665,7 +877,8 @@ export default function InboundClientsPage({ server, inbound, onBack }) {
             </table>
           </div>
         </div>
-      )}
+      </>
+    )}
 
       {/* Client QR Code & Links Modal */}
       <ClientQrModal

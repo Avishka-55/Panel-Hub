@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Server, ShieldCheck, Terminal, X, LogOut } from 'lucide-react';
+import { Server, ShieldCheck, Terminal, X, LogOut, UserCog } from 'lucide-react';
 
 export default function MobileDrawer({
   isOpen,
@@ -37,6 +37,7 @@ export default function MobileDrawer({
     { id: 'servers', label: 'Connected Panels', icon: Server, badge: serverCount },
     { id: 'security', label: 'Security & Encryption', icon: ShieldCheck },
     { id: 'docs', label: '3x-ui API Guide', icon: Terminal },
+    { id: 'account', label: 'Account Settings', icon: UserCog },
   ];
 
   const handleItemClick = (id) => {
@@ -134,11 +135,22 @@ export default function MobileDrawer({
         {/* Drawer Footer (Tenant email & Sign Out button) */}
         {user && (
           <div className="p-4 border-t border-slate-800 bg-slate-900/60 space-y-3">
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800/60 border border-slate-700/60 text-xs">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-              <span className="text-slate-400 text-[11px]">Tenant:</span>
-              <span className="font-medium text-slate-200 truncate text-[11px]">{user.email}</span>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onViewChange?.('account');
+              }}
+              className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 text-xs transition-colors text-left"
+              title="View Account & Security Settings"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                <span className="text-slate-400 text-[11px]">Tenant:</span>
+                <span className="font-medium text-slate-200 truncate text-[11px]">{user.email}</span>
+              </div>
+              <UserCog className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+            </button>
 
             <button
               type="button"

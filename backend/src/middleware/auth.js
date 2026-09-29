@@ -30,6 +30,17 @@ async function authenticateToken(req, res, next) {
       });
     }
 
+    // Invalidate sessions issued before the password was changed
+    if (user.passwordChangedAt && decoded.iat) {
+      const changedTimestamp = Math.floor(user.passwordChangedAt.getTime() / 1000);
+      if (decoded.iat < changedTimestamp) {
+        return res.status(401).json({
+          success: false,
+          error: 'Your password was recently changed. Please log in again with your new credentials.'
+        });
+      }
+    }
+
     req.user = user;
     next();
   } catch (error) {

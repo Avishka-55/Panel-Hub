@@ -9,16 +9,19 @@ import ServerDetailPage from './pages/ServerDetailPage';
 import InboundClientsPage from './pages/InboundClientsPage';
 import SecurityInfoView from './pages/SecurityInfoView';
 import DocsView from './pages/DocsView';
+import AccountSettingsView from './pages/AccountSettingsView';
+import DailyReportModal from './components/DailyReportModal';
 import { Loader2 } from 'lucide-react';
 import { serversApi } from './api/client';
 
 export default function App() {
   const { isAuthenticated, loading, user, logout } = useAuth();
 
-  const [activeTab, setActiveTab] = useState('servers'); // 'servers' | 'security' | 'docs'
+  const [activeTab, setActiveTab] = useState('servers'); // 'servers' | 'security' | 'docs' | 'account'
   const [selectedServer, setSelectedServer] = useState(null);
   const [selectedInbound, setSelectedInbound] = useState(null);
   const [serverCount, setServerCount] = useState(0);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
   // Mobile drawer: ALWAYS starts closed so it never blocks the screen on mobile load
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -110,6 +113,13 @@ export default function App() {
     }
 
     switch (activeTab) {
+      case 'account':
+        return (
+          <AccountSettingsView
+            serverCount={serverCount}
+            onOpenDailyReport={() => setIsReportModalOpen(true)}
+          />
+        );
       case 'security':
         return <SecurityInfoView />;
       case 'docs':
@@ -140,7 +150,7 @@ export default function App() {
         serverCount={serverCount}
       />
 
-      {/* Modern Compact Mobile Drawer (Sliding sheet, only 3 items, never full screen) */}
+      {/* Modern Compact Mobile Drawer (Sliding sheet, only 4 items, never full screen) */}
       <MobileDrawer
         isOpen={isMobileMenuOpen}
         onClose={() => setIsMobileMenuOpen(false)}
@@ -168,6 +178,12 @@ export default function App() {
           {renderContent()}
         </main>
       </div>
+
+      {/* Global Daily Operations Report Modal */}
+      <DailyReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+      />
     </div>
   );
 }

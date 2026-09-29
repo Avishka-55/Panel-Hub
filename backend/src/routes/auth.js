@@ -1,10 +1,16 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const Server = require('../models/Server');
 const config = require('../config/config');
 const { authLimiter } = require('../middleware/rateLimiter');
 const { authenticateToken } = require('../middleware/auth');
-const { sendVerificationOtp, sendPasswordResetOtp } = require('../utils/emailService');
+const {
+  sendVerificationOtp,
+  sendPasswordResetOtp,
+  sendPasswordChangedNotification,
+  sendAccountDeletedNotification
+} = require('../utils/emailService');
 
 const router = express.Router();
 
@@ -388,6 +394,7 @@ router.post('/reset-password', authLimiter, async (req, res) => {
     }
 
     user.passwordHash = await User.hashPassword(newPassword);
+    user.passwordChangedAt = new Date(Date.now() - 1000);
     user.resetPasswordOtp = undefined;
     user.resetPasswordOtpExpires = undefined;
     user.isVerified = true; // Successfully verifying through email confirms ownership
@@ -420,6 +427,131 @@ router.get('/me', authenticateToken, async (req, res) => {
       createdAt: req.user.createdAt
     }
   });
+});
+
+/**
+ * POST /api/auth/change-password
+ * Allows an authenticated user to change their account password.
+ */
+router.post('/change-password', authenticateToken, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        error: 'Current password and new password are required'
+      });
+    }
+
+    if (typeof newPassword !== 'string' || newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'New password must be at least 6 characters long'
+      });
+    }
+
+    const user = await User.findById(req.user._id).select('+passwordHash');
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User account not found'
+      });
+    }
+
+    const isMatch = await user.comparePassword(currentPassword);
+    if (!isMatch) {
+      return res.status(400).json({
+        success: false,
+        error: 'Current password is incorrect'
+      });
+    }
+
+    user.passwordHash = await User.hashPassword(newPassword);
+    user.passwordChangedAt = new Date(Date.now() - 1000);
+    await user.save();
+
+    // Generate fresh session token for the active device
+    const token = generateToken(user);
+
+    // Send confirmation email
+    try {
+      await sendPasswordChangedNotification(user.email);
+    } catch (emailErr) {
+      console.warn('[Change Password Notification Failed]:', emailErr.message);
+    }
+
+    return res.status(200).json({
+      success: true,
+      token,
+      message: 'Password changed successfully! All other active sessions have been logged out.'
+    });
+  } catch (error) {
+    console.error('[Change Password Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to update password. Please try again.'
+    });
+  }
+});
+
+/**
+ * DELETE /api/auth/account
+ * Permanently deletes the user account, along with all associated server configs and credentials.
+ */
+router.delete('/account', authenticateToken, async (req, res) => {
+  try {
+    const { password } = req.body;
+
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        error: 'Password confirmation is required to delete your account'
+      });
+    }
+
+    const user = await User.findById(req.user._id).select('+passwordHash');
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User account not found'
+      });
+    }
+
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        error: 'Incorrect password. Account deletion aborted.'
+      });
+    }
+
+    const userEmail = user.email;
+
+    // Cascade delete all servers associated with this user
+    const deleteResult = await Server.deleteMany({ userId: user._id });
+
+    // Delete the user record
+    await User.findByIdAndDelete(user._id);
+
+    // Send confirmation email
+    try {
+      await sendAccountDeletedNotification(userEmail);
+    } catch (emailErr) {
+      console.warn('[Account Deleted Notification Failed]:', emailErr.message);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Account and ${deleteResult.deletedCount || 0} connected panel configurations have been permanently deleted.`
+    });
+  } catch (error) {
+    console.error('[Delete Account Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to delete account. Please try again.'
+    });
+  }
 });
 
 module.exports = router;

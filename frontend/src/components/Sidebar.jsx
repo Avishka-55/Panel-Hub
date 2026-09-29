@@ -1,11 +1,12 @@
 import React from 'react';
-import { Server, ShieldCheck, Cpu, HardDrive, Radio, Terminal, ExternalLink, PanelLeftClose } from 'lucide-react';
+import { Server, ShieldCheck, Cpu, HardDrive, Radio, Terminal, ExternalLink, PanelLeftClose, UserCog } from 'lucide-react';
 
 export default function Sidebar({ activeView, onViewChange, onClose, serverCount = 0 }) {
   const navItems = [
     { id: 'servers', label: 'Connected Panels', icon: Server, badge: serverCount },
     { id: 'security', label: 'Security & Encryption', icon: ShieldCheck },
     { id: 'docs', label: '3x-ui API Guide', icon: Terminal },
+    { id: 'account', label: 'Account & Security', icon: UserCog },
   ];
 
   return (

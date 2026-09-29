@@ -118,46 +118,48 @@ export default function AlertSettingsModal({ isOpen, onClose, server, onSaved })
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/80 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-6 py-5 border-b border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-              <Sliders className="w-5 h-5" />
+        <div className="px-4 py-3.5 sm:px-6 sm:py-4 border-b border-slate-800 flex items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+            <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 shrink-0">
+              <Sliders className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <h3 className="text-base font-bold text-white">Alert & Monitoring Customization</h3>
-              <p className="text-xs text-slate-400 truncate max-w-xs">{server.nickname} ({server.panelUrl})</p>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm sm:text-base font-bold text-white truncate">Alert & Monitoring</h3>
+              <p className="text-[11px] sm:text-xs text-slate-400 truncate max-w-[200px] xs:max-w-[260px] sm:max-w-xs">
+                {server.nickname} <span className="font-mono text-slate-500">({server.panelUrl})</span>
+              </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Content */}
-        <form onSubmit={handleSave} className="p-6 space-y-5 overflow-y-auto flex-1">
+        <form onSubmit={handleSave} className="p-3.5 sm:p-6 space-y-3.5 sm:space-y-4 overflow-y-auto flex-1">
           {/* Master Email Alerts Toggle */}
-          <div className="p-4 rounded-xl bg-slate-800/40 border border-slate-700/60 flex items-center justify-between">
-            <div className="flex items-start gap-3">
-              <div className={`p-2 rounded-lg ${emailAlerts ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-700/40 text-slate-500'}`}>
+          <div className="p-3.5 sm:p-4 rounded-xl bg-slate-800/40 border border-slate-700/60 flex items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5 sm:gap-3 min-w-0 flex-1">
+              <div className={`p-2 rounded-lg shrink-0 ${emailAlerts ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-700/40 text-slate-500'}`}>
                 {emailAlerts ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
               </div>
-              <div>
-                <p className="text-sm font-semibold text-white">Brevo Email Notifications</p>
-                <p className="text-xs text-slate-400">Master switch for all email alerts on this node</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs sm:text-sm font-semibold text-white">Brevo Email Notifications</p>
+                <p className="text-[11px] sm:text-xs text-slate-400 leading-snug">Master switch for all email alerts on this node</p>
               </div>
             </div>
-            <label className="relative inline-flex items-center cursor-pointer">
+            <label className="relative inline-flex items-center cursor-pointer shrink-0">
               <input
                 type="checkbox"
                 checked={emailAlerts}
@@ -169,34 +171,34 @@ export default function AlertSettingsModal({ isOpen, onClose, server, onSaved })
           </div>
 
           {/* Granular Alert Types */}
-          <div className={`space-y-3 transition-opacity ${emailAlerts ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
-            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-1">Alert Triggers</h4>
+          <div className={`space-y-2.5 sm:space-y-3 transition-opacity ${emailAlerts ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+            <h4 className="text-[11px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider px-1">Alert Triggers</h4>
 
             {/* 1. Server Downtime Alert */}
-            <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-                <div>
-                  <p className="text-xs font-semibold text-slate-200">Server Offline / Unreachable Alert</p>
-                  <p className="text-[11px] text-slate-400">Notify immediately when panel stops responding</p>
+            <div className="p-3 sm:p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-3">
+              <div className="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
+                <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0 mt-1 sm:mt-0"></span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-slate-200">Server Offline / Unreachable</p>
+                  <p className="text-[11px] text-slate-400 leading-snug">Notify immediately when panel stops responding</p>
                 </div>
               </div>
               <input
                 type="checkbox"
                 checked={notifyOnDown}
                 onChange={(e) => setNotifyOnDown(e.target.checked)}
-                className="w-4 h-4 rounded bg-slate-800 border-slate-700 text-indigo-600 focus:ring-indigo-500"
+                className="w-4 h-4 rounded bg-slate-800 border-slate-700 text-indigo-600 focus:ring-indigo-500 shrink-0 cursor-pointer"
               />
             </div>
 
             {/* Sensitivity */}
             {notifyOnDown && (
-              <div className="ml-4 pl-3 border-l-2 border-slate-800 flex items-center justify-between py-1">
+              <div className="ml-2 sm:ml-4 pl-3 border-l-2 border-slate-800 flex flex-col xs:flex-row xs:items-center justify-between gap-2 py-1">
                 <span className="text-xs text-slate-400">Failure Sensitivity:</span>
                 <select
                   value={consecutiveFails}
                   onChange={(e) => setConsecutiveFails(Number(e.target.value))}
-                  className="bg-slate-800 border border-slate-700 text-xs text-slate-200 rounded-lg px-2.5 py-1 focus:outline-none focus:border-indigo-500"
+                  className="w-full xs:w-auto bg-slate-800 border border-slate-700 text-xs text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-indigo-500"
                 >
                   <option value={1}>Immediate (1st failure)</option>
                   <option value={2}>Tolerant (2 consecutive failures)</option>
@@ -206,43 +208,43 @@ export default function AlertSettingsModal({ isOpen, onClose, server, onSaved })
             )}
 
             {/* 2. Server Recovery Alert */}
-            <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                <div>
+            <div className="p-3 sm:p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-3">
+              <div className="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 mt-1 sm:mt-0"></span>
+                <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold text-slate-200">Server Recovery Alert</p>
-                  <p className="text-[11px] text-slate-400">Notify when the node returns online with downtime duration</p>
+                  <p className="text-[11px] text-slate-400 leading-snug">Notify when the node returns online with duration</p>
                 </div>
               </div>
               <input
                 type="checkbox"
                 checked={notifyOnRecover}
                 onChange={(e) => setNotifyOnRecover(e.target.checked)}
-                className="w-4 h-4 rounded bg-slate-800 border-slate-700 text-indigo-600 focus:ring-indigo-500"
+                className="w-4 h-4 rounded bg-slate-800 border-slate-700 text-indigo-600 focus:ring-indigo-500 shrink-0 cursor-pointer"
               />
             </div>
 
             {/* 3. High Resource Utilization Alert */}
-            <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                  <div>
+            <div className="p-3 sm:p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0 mt-1 sm:mt-0"></span>
+                  <div className="min-w-0 flex-1">
                     <p className="text-xs font-semibold text-slate-200">High Resource Alert (Optional)</p>
-                    <p className="text-[11px] text-slate-400">Trigger warnings if CPU or Memory stays overloaded</p>
+                    <p className="text-[11px] text-slate-400 leading-snug">Trigger warnings if CPU or RAM stays overloaded</p>
                   </div>
                 </div>
                 <input
                   type="checkbox"
                   checked={notifyOnHighResource}
                   onChange={(e) => setNotifyOnHighResource(e.target.checked)}
-                  className="w-4 h-4 rounded bg-slate-800 border-slate-700 text-indigo-600 focus:ring-indigo-500"
+                  className="w-4 h-4 rounded bg-slate-800 border-slate-700 text-indigo-600 focus:ring-indigo-500 shrink-0 cursor-pointer"
                 />
               </div>
 
               {notifyOnHighResource && (
-                <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800/80">
-                  <div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2.5 border-t border-slate-800/80">
+                  <div className="p-2.5 rounded-lg bg-slate-950/40 border border-slate-800/60">
                     <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
                       <span className="flex items-center gap-1"><Cpu className="w-3 h-3 text-amber-400" /> CPU Threshold</span>
                       <strong className="text-white font-mono">{cpuThreshold}%</strong>
@@ -253,11 +255,11 @@ export default function AlertSettingsModal({ isOpen, onClose, server, onSaved })
                       max="99"
                       value={cpuThreshold}
                       onChange={(e) => setCpuThreshold(Number(e.target.value))}
-                      className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                      className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500 mt-1.5"
                     />
                   </div>
 
-                  <div>
+                  <div className="p-2.5 rounded-lg bg-slate-950/40 border border-slate-800/60">
                     <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
                       <span className="flex items-center gap-1"><Layers className="w-3 h-3 text-amber-400" /> RAM Threshold</span>
                       <strong className="text-white font-mono">{ramThreshold}%</strong>
@@ -268,7 +270,7 @@ export default function AlertSettingsModal({ isOpen, onClose, server, onSaved })
                       max="99"
                       value={ramThreshold}
                       onChange={(e) => setRamThreshold(Number(e.target.value))}
-                      className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                      className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500 mt-1.5"
                     />
                   </div>
                 </div>
@@ -277,16 +279,16 @@ export default function AlertSettingsModal({ isOpen, onClose, server, onSaved })
           </div>
 
           {/* Test Alert Dispatch */}
-          <div className="p-3 rounded-xl bg-indigo-950/20 border border-indigo-500/20 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div>
+          <div className="p-3 sm:p-3.5 rounded-xl bg-indigo-950/20 border border-indigo-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3">
+            <div className="min-w-0">
               <p className="text-xs font-semibold text-indigo-300">Test Brevo Email Delivery</p>
-              <p className="text-[11px] text-slate-400">Send an immediate mock alert to test your inbox</p>
+              <p className="text-[11px] text-slate-400 leading-snug">Send an immediate mock alert to verify your inbox</p>
             </div>
             <button
               type="button"
               onClick={handleSendTestAlert}
               disabled={sendingTest}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-200 bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 rounded-lg transition-all shrink-0"
+              className="w-full sm:w-auto justify-center flex items-center gap-1.5 px-3.5 py-2 sm:py-1.5 text-xs font-medium text-indigo-200 bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 rounded-xl sm:rounded-lg transition-all shrink-0"
             >
               {sendingTest ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
               <span>{sendingTest ? 'Sending...' : 'Send Test Alert'}</span>
@@ -294,19 +296,19 @@ export default function AlertSettingsModal({ isOpen, onClose, server, onSaved })
           </div>
 
           {testResult && (
-            <div className={`p-3 rounded-xl text-xs flex items-center gap-2 ${testResult.success ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/10 text-rose-300 border border-rose-500/30'}`}>
-              {testResult.success ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
-              <span>{testResult.message}</span>
+            <div className={`p-3 rounded-xl text-xs flex items-start gap-2.5 break-words ${testResult.success ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/10 text-rose-300 border border-rose-500/30'}`}>
+              {testResult.success ? <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400 mt-0.5" /> : <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />}
+              <span className="flex-1 leading-relaxed">{testResult.message}</span>
             </div>
           )}
         </form>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-slate-800 bg-slate-900/60 flex items-center justify-between">
+        <div className="px-4 py-3 sm:px-6 sm:py-4 border-t border-slate-800 bg-slate-900/60 flex items-center justify-between gap-2.5">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white transition-colors"
+            className="px-3 sm:px-4 py-2 text-xs font-medium text-slate-400 hover:text-white transition-colors"
           >
             Cancel
           </button>
@@ -315,7 +317,7 @@ export default function AlertSettingsModal({ isOpen, onClose, server, onSaved })
             type="button"
             onClick={handleSave}
             disabled={saving}
-            className="flex items-center gap-2 px-5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-50"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 sm:px-5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-50"
           >
             {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
             <span>{saveSuccess ? 'Saved!' : 'Save Preferences'}</span>

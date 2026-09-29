@@ -64,6 +64,14 @@ export const authApi = {
   getMe: async () => {
     const response = await api.get('/auth/me');
     return response.data;
+  },
+  changePassword: async (currentPassword, newPassword) => {
+    const response = await api.post('/auth/change-password', { currentPassword, newPassword });
+    return response.data;
+  },
+  deleteAccount: async (password) => {
+    const response = await api.delete('/auth/account', { data: { password } });
+    return response.data;
   }
 };
 

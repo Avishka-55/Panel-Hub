@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Server, LogOut, PanelLeftClose, PanelLeftOpen, Menu, X } from 'lucide-react';
+import { Server, LogOut, PanelLeftClose, PanelLeftOpen, Menu, X, UserCog } from 'lucide-react';
 
 export default function Navbar({
   isMobileMenuOpen = false,
@@ -109,21 +109,54 @@ export default function Navbar({
             >
               3x-ui API Guide
             </button>
+            <button
+              onClick={() => onViewChange('account')}
+              className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+                activeView === 'account'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              Account
+            </button>
           </nav>
         )}
 
         {/* User Info & Logout Button */}
         {user && (
-          <div className="flex items-center gap-2 sm:gap-4">
-            <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs text-slate-300">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              onClick={() => onViewChange?.('account')}
+              className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs transition-all ${
+                activeView === 'account'
+                  ? 'bg-indigo-600/20 border-indigo-500/40 text-white'
+                  : 'bg-slate-800/80 hover:bg-slate-700/80 border-slate-700/60 text-slate-300'
+              }`}
+              title="Account & Security Settings"
+            >
               <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-slate-400">Tenant:</span>
               <span className="font-medium text-slate-200">{user.email}</span>
-            </div>
+              <UserCog className="w-3.5 h-3.5 text-indigo-400 ml-0.5" />
+            </button>
+
+            {/* Mobile Account button */}
+            <button
+              onClick={() => onViewChange?.('account')}
+              className={`sm:hidden p-2 rounded-xl border transition-all ${
+                activeView === 'account'
+                  ? 'bg-indigo-600/30 border-indigo-500/50 text-indigo-300'
+                  : 'bg-slate-800/80 hover:bg-slate-700/80 border-slate-700/80 text-slate-300'
+              }`}
+              title="Account Settings"
+              aria-label="Account Settings"
+            >
+              <UserCog className="w-4 h-4 text-indigo-400" />
+            </button>
 
             <button
               onClick={logout}
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/60 hover:bg-rose-500/20 hover:border-rose-500/40 border border-slate-700/80 rounded-lg transition-all"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/60 hover:bg-rose-500/20 hover:border-rose-500/40 border border-slate-700/80 rounded-xl transition-all"
               title="Sign Out"
             >
               <LogOut className="w-3.5 h-3.5 text-rose-400 sm:text-slate-300" />
