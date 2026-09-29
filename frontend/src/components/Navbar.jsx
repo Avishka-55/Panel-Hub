@@ -1,23 +1,48 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Server, Shield, LogOut, User, Activity, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Server, LogOut, PanelLeftClose, PanelLeftOpen, Menu, X } from 'lucide-react';
 
-export default function Navbar({ isSidebarVisible = true, onToggleSidebar, activeView, onViewChange, serverCount = 0 }) {
+export default function Navbar({
+  isMobileMenuOpen = false,
+  onToggleMobileMenu,
+  isDesktopSidebarVisible = true,
+  onToggleDesktopSidebar,
+  activeView,
+  onViewChange,
+  serverCount = 0
+}) {
   const { user, logout } = useAuth();
 
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-800 bg-slate-900/80 backdrop-blur-md px-6 py-3.5 transition-all">
+    <header className="sticky top-0 z-30 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md px-4 sm:px-6 py-3 sm:py-3.5 transition-all">
       <div className="flex items-center justify-between max-w-7xl mx-auto">
-        <div className="flex items-center gap-3">
-          {user && onToggleSidebar && (
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          {/* Mobile Menu Hamburger / Close Toggle */}
+          {user && onToggleMobileMenu && (
             <button
               type="button"
-              onClick={onToggleSidebar}
-              className="p-2 rounded-xl text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 transition-all focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              title={isSidebarVisible ? 'Hide navigation panel (Ctrl+B)' : 'Show navigation panel (Ctrl+B)'}
-              aria-label={isSidebarVisible ? 'Hide navigation panel' : 'Show navigation panel'}
+              onClick={onToggleMobileMenu}
+              className="p-2 rounded-xl text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 md:hidden transition-all focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              aria-label={isMobileMenuOpen ? 'Close menu' : 'Open menu'}
             >
-              {isSidebarVisible ? (
+              {isMobileMenuOpen ? (
+                <X className="w-4 h-4 text-white" />
+              ) : (
+                <Menu className="w-4 h-4 text-indigo-400" />
+              )}
+            </button>
+          )}
+
+          {/* Desktop Sidebar Toggle Button */}
+          {user && onToggleDesktopSidebar && (
+            <button
+              type="button"
+              onClick={onToggleDesktopSidebar}
+              className="hidden md:flex p-2 rounded-xl text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 transition-all focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              title={isDesktopSidebarVisible ? 'Hide sidebar (Ctrl+B)' : 'Show sidebar (Ctrl+B)'}
+              aria-label={isDesktopSidebarVisible ? 'Hide sidebar' : 'Show sidebar'}
+            >
+              {isDesktopSidebarVisible ? (
                 <PanelLeftClose className="w-4 h-4" />
               ) : (
                 <PanelLeftOpen className="w-4 h-4 text-indigo-400" />
@@ -25,22 +50,23 @@ export default function Navbar({ isSidebarVisible = true, onToggleSidebar, activ
             </button>
           )}
 
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-            <Server className="w-5 h-5 text-white" />
+          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/20 shrink-0">
+            <Server className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
           </div>
+
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-bold text-lg text-white tracking-tight">PanelHub</span>
-              <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+              <span className="font-bold text-base sm:text-lg text-white tracking-tight">PanelHub</span>
+              <span className="hidden sm:inline-flex text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
                 SaaS Admin
               </span>
             </div>
-            <p className="text-xs text-slate-400">Multi-Tenant 3x-ui Panel Orchestrator</p>
+            <p className="hidden sm:block text-xs text-slate-400">Multi-Tenant 3x-ui Panel Orchestrator</p>
           </div>
         </div>
 
-        {/* Quick nav links when navigation panel is hidden */}
-        {user && !isSidebarVisible && onViewChange && (
+        {/* Quick nav links on desktop when sidebar is collapsed */}
+        {user && !isDesktopSidebarVisible && onViewChange && (
           <nav className="hidden md:flex items-center gap-1 bg-slate-800/60 p-1 border border-slate-700/60 rounded-xl text-xs animate-fadeIn">
             <button
               onClick={() => onViewChange('servers')}
@@ -71,7 +97,7 @@ export default function Navbar({ isSidebarVisible = true, onToggleSidebar, activ
                   : 'text-slate-400 hover:text-white hover:bg-slate-800'
               }`}
             >
-              Security & Vault
+              Security & Encryption
             </button>
             <button
               onClick={() => onViewChange('docs')}
@@ -81,26 +107,27 @@ export default function Navbar({ isSidebarVisible = true, onToggleSidebar, activ
                   : 'text-slate-400 hover:text-white hover:bg-slate-800'
               }`}
             >
-              API Guide
+              3x-ui API Guide
             </button>
           </nav>
         )}
 
+        {/* User Info & Logout Button */}
         {user && (
-          <div className="flex items-center gap-4">
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs text-slate-300">
-              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
+          <div className="flex items-center gap-2 sm:gap-4">
+            <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs text-slate-300">
+              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-slate-400">Tenant:</span>
               <span className="font-medium text-slate-200">{user.email}</span>
             </div>
 
             <button
               onClick={logout}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/60 hover:bg-rose-500/20 hover:border-rose-500/40 border border-slate-700/80 rounded-lg transition-all"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/60 hover:bg-rose-500/20 hover:border-rose-500/40 border border-slate-700/80 rounded-lg transition-all"
               title="Sign Out"
             >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Sign Out</span>
+              <LogOut className="w-3.5 h-3.5 text-rose-400 sm:text-slate-300" />
+              <span className="hidden sm:inline">Sign Out</span>
             </button>
           </div>
         )}

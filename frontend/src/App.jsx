@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
+import MobileDrawer from './components/MobileDrawer';
 import AuthPage from './pages/AuthPage';
 import DashboardPage from './pages/DashboardPage';
 import ServerDetailPage from './pages/ServerDetailPage';
@@ -12,12 +13,33 @@ import { Loader2 } from 'lucide-react';
 import { serversApi } from './api/client';
 
 export default function App() {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user, logout } = useAuth();
 
   const [activeTab, setActiveTab] = useState('servers'); // 'servers' | 'security' | 'docs'
   const [selectedServer, setSelectedServer] = useState(null);
   const [selectedInbound, setSelectedInbound] = useState(null);
   const [serverCount, setServerCount] = useState(0);
+
+  // Mobile drawer: ALWAYS starts closed so it never blocks the screen on mobile load
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Desktop sidebar: persistent visibility state for desktop screens
+  const [isDesktopSidebarVisible, setIsDesktopSidebarVisible] = useState(() => {
+    const saved = localStorage.getItem('panelhub_sidebar_visible');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  const toggleMobileMenu = () => {
+    setIsMobileMenuOpen((prev) => !prev);
+  };
+
+  const toggleDesktopSidebar = () => {
+    setIsDesktopSidebarVisible((prev) => {
+      const next = !prev;
+      localStorage.setItem('panelhub_sidebar_visible', String(next));
+      return next;
+    });
+  };
 
   // Sync server count on initial login / authentication
   useEffect(() => {
@@ -30,26 +52,12 @@ export default function App() {
     }
   }, [isAuthenticated]);
 
-  // Persistent sidebar visibility state
-  const [isSidebarVisible, setIsSidebarVisible] = useState(() => {
-    const saved = localStorage.getItem('panelhub_sidebar_visible');
-    return saved !== null ? saved === 'true' : true;
-  });
-
-  const toggleSidebar = () => {
-    setIsSidebarVisible((prev) => {
-      const next = !prev;
-      localStorage.setItem('panelhub_sidebar_visible', String(next));
-      return next;
-    });
-  };
-
-  // Keyboard shortcut Ctrl+B / Cmd+B to toggle sidebar
+  // Keyboard shortcut Ctrl+B / Cmd+B to toggle sidebar on desktop
   useEffect(() => {
     const handleKeyDown = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
         e.preventDefault();
-        toggleSidebar();
+        toggleDesktopSidebar();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -73,6 +81,7 @@ export default function App() {
     setActiveTab(tabId);
     setSelectedServer(null);
     setSelectedInbound(null);
+    setIsMobileMenuOpen(false); // Ensure mobile drawer closes upon navigation
   };
 
   // Current view identifier for navbar & sidebar
@@ -122,41 +131,40 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       <Navbar
-        isSidebarVisible={isSidebarVisible}
-        onToggleSidebar={toggleSidebar}
+        isMobileMenuOpen={isMobileMenuOpen}
+        onToggleMobileMenu={toggleMobileMenu}
+        isDesktopSidebarVisible={isDesktopSidebarVisible}
+        onToggleDesktopSidebar={toggleDesktopSidebar}
         activeView={currentView}
         onViewChange={handleNavChange}
         serverCount={serverCount}
       />
 
-      {/* Mobile backdrop */}
-      {isSidebarVisible && (
-        <div
-          className="fixed inset-0 z-30 bg-slate-950/70 backdrop-blur-xs md:hidden"
-          onClick={toggleSidebar}
-        />
-      )}
+      {/* Modern Compact Mobile Drawer (Sliding sheet, only 3 items, never full screen) */}
+      <MobileDrawer
+        isOpen={isMobileMenuOpen}
+        onClose={() => setIsMobileMenuOpen(false)}
+        activeView={currentView}
+        onViewChange={handleNavChange}
+        serverCount={serverCount}
+        user={user}
+        onLogout={logout}
+      />
 
       <div className="flex-1 flex max-w-7xl w-full mx-auto relative">
-        {/* Navigation panel */}
-        {isSidebarVisible && (
-          <div className="fixed md:static inset-y-0 left-0 z-40 md:z-auto bg-slate-900 md:bg-transparent shadow-2xl md:shadow-none animate-fadeIn">
+        {/* Desktop Sidebar (hidden on mobile, cleanly integrated in layout) */}
+        {isDesktopSidebarVisible && (
+          <div className="hidden md:block">
             <Sidebar
               activeView={currentView}
               serverCount={serverCount}
-              onViewChange={(tab) => {
-                handleNavChange(tab);
-                // On small screens, close navigation panel automatically after selection
-                if (window.innerWidth < 768) {
-                  setIsSidebarVisible(false);
-                }
-              }}
-              onClose={toggleSidebar}
+              onViewChange={handleNavChange}
+              onClose={toggleDesktopSidebar}
             />
           </div>
         )}
 
-        <main className="flex-1 p-6 lg:p-8 min-w-0 transition-all">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0 transition-all">
           {renderContent()}
         </main>
       </div>
