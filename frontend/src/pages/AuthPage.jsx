@@ -202,9 +202,9 @@ export default function AuthPage() {
     <div className="min-h-screen flex items-center justify-center p-4 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-950 via-slate-950 to-slate-950 text-slate-100">
       <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 rounded-3xl overflow-hidden border border-slate-800 bg-slate-900/60 backdrop-blur-xl shadow-2xl">
         {/* Left Side: Brand & Feature Highlights */}
-        <div className="p-8 md:p-12 flex flex-col justify-between border-b md:border-b-0 md:border-r border-slate-800/80 bg-gradient-to-br from-indigo-950/40 to-slate-900/40">
+        <div className="p-6 md:p-12 flex flex-col justify-between border-b md:border-b-0 md:border-r border-slate-800/80 bg-gradient-to-br from-indigo-950/40 to-slate-900/40">
           <div>
-            <div className="flex items-center gap-3 mb-6">
+            <div className="flex items-center gap-3 mb-4 md:mb-6">
               <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-600/30">
                 <Server className="w-6 h-6 text-white" />
               </div>
@@ -214,14 +214,15 @@ export default function AuthPage() {
               </div>
             </div>
 
-            <h2 className="text-2xl font-bold tracking-tight text-white mb-3">
+            <h2 className="text-lg md:text-2xl font-bold tracking-tight text-white mb-2 md:mb-3">
               Centralized Control for Distributed 3x-ui Panels
             </h2>
-            <p className="text-sm text-slate-400 leading-relaxed mb-6">
+            <p className="text-xs md:text-sm text-slate-400 leading-relaxed mb-0 md:mb-6">
               Provider-agnostic administrative dashboard to manage inbounds, monitor bandwidth, and control live clients across all your VPN nodes.
             </p>
 
-            <div className="space-y-3.5">
+            {/* Feature Highlights: Hidden on mobile, visible on tablet/desktop */}
+            <div className="hidden md:block space-y-3.5">
               {[
                 { title: 'AES-256-GCM Encryption', desc: 'Panel passwords encrypted at rest, decrypted only in-memory' },
                 { title: 'OTP Email Security', desc: 'Two-step verification & secure password recovery via Brevo' },
@@ -241,14 +242,14 @@ export default function AuthPage() {
             </div>
           </div>
 
-          <div className="mt-8 pt-6 border-t border-slate-800/80 text-[11px] text-slate-500 flex items-center justify-between">
+          <div className="hidden md:flex mt-8 pt-6 border-t border-slate-800/80 text-[11px] text-slate-500 items-center justify-between">
             <span>Production-grade security</span>
             <span>Rate-limited API</span>
           </div>
         </div>
 
         {/* Right Side: Dynamic Form depending on mode */}
-        <div className="p-8 md:p-12 flex flex-col justify-center">
+        <div className="p-6 md:p-12 flex flex-col justify-center">
           {/* Notification Messages */}
           {error && (
             <div className="mb-4 flex items-center gap-2 p-3 text-xs rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 animate-fadeIn">
