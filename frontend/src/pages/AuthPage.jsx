@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { authApi } from '../api/client';
+import TurnstileWidget from '../components/TurnstileWidget';
 import {
   Server,
   ShieldCheck,
@@ -29,6 +30,16 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const turnstileRef = useRef(null);
+
+  const handleTurnstileVerify = useCallback((token) => {
+    setTurnstileToken(token);
+  }, []);
+
+  const handleTurnstileExpire = useCallback(() => {
+    setTurnstileToken('');
+  }, []);
 
   // Resend OTP cooldown timer
   const [resendCooldown, setResendCooldown] = useState(0);
@@ -50,6 +61,8 @@ export default function AuthPage() {
     setError(null);
     setSuccessMessage(null);
     setOtp('');
+    setTurnstileToken('');
+    turnstileRef.current?.reset();
   };
 
   // Submit handler for Registration
@@ -69,7 +82,7 @@ export default function AuthPage() {
 
     setLoading(true);
     try {
-      const res = await register(email, password);
+      const res = await register(email, password, turnstileToken);
       if (res.requiresVerification) {
         setSuccessMessage('A 6-digit verification code has been sent to your email.');
         setMode('verify_otp');
@@ -79,6 +92,8 @@ export default function AuthPage() {
       }
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Registration failed');
+      turnstileRef.current?.reset();
+      setTurnstileToken('');
     } finally {
       setLoading(false);
     }
@@ -91,7 +106,7 @@ export default function AuthPage() {
 
     setLoading(true);
     try {
-      const res = await login(email, password);
+      const res = await login(email, password, turnstileToken);
       if (res.requiresVerification) {
         setError(res.error || 'Your email is not verified yet. We sent you a new verification code.');
         setMode('verify_otp');
@@ -99,6 +114,8 @@ export default function AuthPage() {
       }
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Invalid email or password');
+      turnstileRef.current?.reset();
+      setTurnstileToken('');
     } finally {
       setLoading(false);
     }
@@ -153,12 +170,14 @@ export default function AuthPage() {
 
     setLoading(true);
     try {
-      const res = await authApi.forgotPassword(email);
+      const res = await authApi.forgotPassword(email, turnstileToken);
       setSuccessMessage(res.message || 'A 6-digit reset code has been sent to your email.');
       setMode('reset_password_otp');
       setResendCooldown(60);
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Failed to process request');
+      turnstileRef.current?.reset();
+      setTurnstileToken('');
     } finally {
       setLoading(false);
     }
@@ -321,6 +340,12 @@ export default function AuthPage() {
                   </div>
                 </div>
 
+                <TurnstileWidget
+                  ref={turnstileRef}
+                  onVerify={handleTurnstileVerify}
+                  onExpire={handleTurnstileExpire}
+                />
+
                 <button
                   type="submit"
                   disabled={loading}
@@ -414,6 +439,12 @@ export default function AuthPage() {
                     />
                   </div>
                 </div>
+
+                <TurnstileWidget
+                  ref={turnstileRef}
+                  onVerify={handleTurnstileVerify}
+                  onExpire={handleTurnstileExpire}
+                />
 
                 <button
                   type="submit"
@@ -549,6 +580,12 @@ export default function AuthPage() {
                     />
                   </div>
                 </div>
+
+                <TurnstileWidget
+                  ref={turnstileRef}
+                  onVerify={handleTurnstileVerify}
+                  onExpire={handleTurnstileExpire}
+                />
 
                 <button
                   type="submit"

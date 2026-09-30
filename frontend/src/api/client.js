@@ -37,12 +37,20 @@ api.interceptors.response.use(
 );
 
 export const authApi = {
-  login: async (email, password) => {
-    const response = await api.post('/auth/login', { email, password });
+  getTurnstileConfig: async () => {
+    try {
+      const response = await api.get('/auth/turnstile-config');
+      return response.data;
+    } catch (_) {
+      return { success: false, enabled: false };
+    }
+  },
+  login: async (email, password, turnstileToken) => {
+    const response = await api.post('/auth/login', { email, password, turnstileToken });
     return response.data;
   },
-  register: async (email, password) => {
-    const response = await api.post('/auth/register', { email, password });
+  register: async (email, password, turnstileToken) => {
+    const response = await api.post('/auth/register', { email, password, turnstileToken });
     return response.data;
   },
   verifyOtp: async (email, otp) => {
@@ -53,8 +61,8 @@ export const authApi = {
     const response = await api.post('/auth/resend-otp', { email });
     return response.data;
   },
-  forgotPassword: async (email) => {
-    const response = await api.post('/auth/forgot-password', { email });
+  forgotPassword: async (email, turnstileToken) => {
+    const response = await api.post('/auth/forgot-password', { email, turnstileToken });
     return response.data;
   },
   resetPassword: async (email, otp, newPassword) => {

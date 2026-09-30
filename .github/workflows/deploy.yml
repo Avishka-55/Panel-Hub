@@ -25,6 +25,8 @@ jobs:
 
       - name: Build Production Frontend
         working-directory: frontend
+        env:
+          VITE_CLOUDFLARE_TURNSTILE_SITE_KEY: ${{ secrets.CLOUDFLARE_TURNSTILE_SITE_KEY }}
         run: npm run build
 
       - name: Upload Frontend Artifact
@@ -96,6 +98,8 @@ jobs:
             EMAIL_FROM_NAME="PanelHub Security"
             START_MOCK_PANEL=false
             HEALTH_CHECK_INTERVAL_MINUTES=5
+            CLOUDFLARE_TURNSTILE_SITE_KEY=${{ secrets.CLOUDFLARE_TURNSTILE_SITE_KEY }}
+            CLOUDFLARE_TURNSTILE_SECRET_KEY=${{ secrets.CLOUDFLARE_TURNSTILE_SECRET_KEY }}
             EOF
 
             # Install production backend dependencies

@@ -36,8 +36,8 @@ export const AuthProvider = ({ children }) => {
     verifyAuth();
   }, []);
 
-  const login = async (email, password) => {
-    const res = await authApi.login(email, password);
+  const login = async (email, password, turnstileToken) => {
+    const res = await authApi.login(email, password, turnstileToken);
     if (res.success && res.token) {
       setToken(res.token);
       setUser(res.user);
@@ -48,8 +48,8 @@ export const AuthProvider = ({ children }) => {
     return res;
   };
 
-  const register = async (email, password) => {
-    const res = await authApi.register(email, password);
+  const register = async (email, password, turnstileToken) => {
+    const res = await authApi.register(email, password, turnstileToken);
     return res;
   };
 

@@ -22,5 +22,7 @@ module.exports = {
   jwtSecret: process.env.JWT_SECRET || 'panelhub-jwt-super-secret-key-change-in-prod',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   nodeEnv: process.env.NODE_ENV || 'development',
-  corsOrigin: process.env.CORS_ORIGIN || '*'
+  corsOrigin: process.env.CORS_ORIGIN || '*',
+  turnstileSiteKey: process.env.CLOUDFLARE_TURNSTILE_SITE_KEY || '',
+  turnstileSecretKey: process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY || ''
 };

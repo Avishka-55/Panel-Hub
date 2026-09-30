@@ -11,6 +11,7 @@ const {
   sendPasswordChangedNotification,
   sendAccountDeletedNotification
 } = require('../utils/emailService');
+const { verifyTurnstile } = require('../middleware/turnstile');
 
 const router = express.Router();
 
@@ -24,10 +25,22 @@ function generateToken(user) {
 }
 
 /**
+ * GET /api/auth/turnstile-config
+ * Public endpoint to fetch Cloudflare Turnstile configuration (site key & enabled status).
+ */
+router.get('/turnstile-config', (req, res) => {
+  res.status(200).json({
+    success: true,
+    enabled: Boolean(config.turnstileSecretKey),
+    siteKey: config.turnstileSiteKey || ''
+  });
+});
+
+/**
  * POST /api/auth/register
  * Register a new administrator account and dispatch a 6-digit verification OTP.
  */
-router.post('/register', authLimiter, async (req, res) => {
+router.post('/register', authLimiter, verifyTurnstile, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -230,7 +243,7 @@ router.post('/resend-otp', authLimiter, async (req, res) => {
  * POST /api/auth/login
  * Authenticate existing administrator account.
  */
-router.post('/login', authLimiter, async (req, res) => {
+router.post('/login', authLimiter, verifyTurnstile, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -302,7 +315,7 @@ router.post('/login', authLimiter, async (req, res) => {
  * POST /api/auth/forgot-password
  * Initiates password reset by emailing a 6-digit reset OTP.
  */
-router.post('/forgot-password', authLimiter, async (req, res) => {
+router.post('/forgot-password', authLimiter, verifyTurnstile, async (req, res) => {
   try {
     const { email } = req.body;
 
