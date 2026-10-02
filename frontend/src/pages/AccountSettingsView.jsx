@@ -57,6 +57,7 @@ export default function AccountSettingsView({ serverCount = 0, onOpenDailyReport
   const [showApiKey, setShowApiKey] = useState(false);
   const [copiedApiKey, setCopiedApiKey] = useState(false);
   const [copiedClaudeConfig, setCopiedClaudeConfig] = useState(false);
+  const [copiedClaudeWebUrl, setCopiedClaudeWebUrl] = useState(false);
   const [generatingApiKey, setGeneratingApiKey] = useState(false);
   const [revokingApiKey, setRevokingApiKey] = useState(false);
   const [apiKeyMessage, setApiKeyMessage] = useState(null);
@@ -148,6 +149,13 @@ export default function AccountSettingsView({ serverCount = 0, onOpenDailyReport
     navigator.clipboard.writeText(configSnippet);
     setCopiedClaudeConfig(true);
     setTimeout(() => setCopiedClaudeConfig(false), 2500);
+  };
+
+  const handleCopyClaudeWebUrl = () => {
+    const connectorUrl = `${window.location.origin}/api/mcp/sse?apiKey=${apiKeyData?.apiKey || ''}`;
+    navigator.clipboard.writeText(connectorUrl);
+    setCopiedClaudeWebUrl(true);
+    setTimeout(() => setCopiedClaudeWebUrl(false), 2500);
   };
 
   // Delete Account modal state
@@ -721,6 +729,47 @@ export default function AccountSettingsView({ serverCount = 0, onOpenDailyReport
                   <Trash2 className="w-3.5 h-3.5 text-rose-400" />
                   <span>Revoke</span>
                 </button>
+              </div>
+            </div>
+
+            {/* Claude.ai Web Custom Connector Box */}
+            <div className="p-3.5 rounded-xl bg-slate-950/80 border border-purple-900/40 text-xs space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-purple-200 font-semibold text-[11px]">
+                  <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Claude.ai Web Custom Connector</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyClaudeWebUrl}
+                  className="text-[10px] font-semibold text-purple-300 hover:text-white flex items-center gap-1 transition-colors bg-purple-900/30 hover:bg-purple-900/50 px-2 py-0.5 rounded border border-purple-700/40"
+                >
+                  {copiedClaudeWebUrl ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-purple-400" />}
+                  <span>{copiedClaudeWebUrl ? 'Copied Connector URL!' : 'Copy Connector URL'}</span>
+                </button>
+              </div>
+
+              <div className="space-y-1.5 text-[11px] text-slate-300">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 p-2 rounded-lg bg-slate-900/90 border border-slate-800">
+                  <span className="text-slate-400">Step 1 — Name:</span>
+                  <code className="text-purple-300 font-mono font-semibold">PanelHub</code>
+                </div>
+                <div className="flex flex-col gap-1 p-2 rounded-lg bg-slate-900/90 border border-slate-800">
+                  <span className="text-slate-400">Step 1 — MCP Server URL:</span>
+                  <code className="text-purple-300 font-mono break-all text-[10px]">
+                    {`${window.location.origin}/api/mcp/sse?apiKey=${apiKeyData?.apiKey || 'YOUR_API_KEY'}`}
+                  </code>
+                </div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 p-2 rounded-lg bg-slate-900/90 border border-slate-800">
+                  <span className="text-slate-400">Step 2 — Authentication:</span>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    Select "No sign-in"
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-2 rounded-lg bg-amber-500/5 border border-amber-500/20 text-[10px] text-amber-300/90 leading-relaxed">
+                💡 <strong>Getting "asked for sign-in (status 404)"?</strong> If you previously disconnected, delete the connector from Claude Settings ➔ Connectors, then click <strong>Add custom connector</strong> and paste the URL above with your API key to bypass Claude's cached error.
               </div>
             </div>
 

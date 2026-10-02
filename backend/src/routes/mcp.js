@@ -913,24 +913,49 @@ router.get('/', (req, res, next) => {
 router.get('/sse', authenticateMcp, handleSseConnection);
 
 /**
- * POST /mcp/messages
+ * GET /.well-known/oauth-authorization-server and /.well-known/openid-configuration
+ * Handlers for OAuth discovery probes sent by AI connector clients.
+ * Informs client that PanelHub uses direct API key Bearer/query authentication.
+ */
+router.get(['/.well-known/oauth-authorization-server', '/.well-known/openid-configuration'], (req, res) => {
+  res.status(200).json({
+    issuer: 'https://hub.avishka.site',
+    authorization_endpoint: null,
+    token_endpoint: null,
+    response_types_supported: [],
+    token_endpoint_auth_methods_supported: ['bearer', 'query_api_key'],
+    service_documentation: 'https://hub.avishka.site/docs',
+    note: 'PanelHub MCP supports direct Bearer token (Authorization: Bearer <key>) or query parameter (?apiKey=<key>).'
+  });
+});
+
+/**
+ * POST /messages, /sse, /
  * Handles incoming JSON-RPC client messages (tool calls, lists) routed through the active SSE transport session.
  */
-router.post('/messages', async (req, res) => {
+const handlePostMessages = async (req, res) => {
   try {
     const sessionId = req.query.sessionId;
     if (!sessionId) {
       return res.status(400).json({
-        success: false,
-        error: 'Missing required "sessionId" query parameter.'
+        jsonrpc: '2.0',
+        error: {
+          code: -32600,
+          message: 'Missing required "sessionId" query parameter. Please establish an SSE transport session first via GET /api/mcp/sse?apiKey=...'
+        },
+        success: false
       });
     }
 
     const session = activeSessions.get(sessionId);
     if (!session) {
       return res.status(404).json({
-        success: false,
-        error: 'Active MCP session not found or expired. Please re-establish SSE connection.'
+        jsonrpc: '2.0',
+        error: {
+          code: -32001,
+          message: 'Active MCP session not found or expired. Please re-establish SSE connection.'
+        },
+        success: false
       });
     }
 
@@ -938,9 +963,17 @@ router.post('/messages', async (req, res) => {
   } catch (error) {
     console.error('[MCP Messages Error]:', error);
     if (!res.headersSent) {
-      res.status(500).json({ success: false, error: error.message });
+      res.status(500).json({
+        jsonrpc: '2.0',
+        error: { code: -32603, message: error.message },
+        success: false
+      });
     }
   }
-});
+};
+
+router.post('/messages', handlePostMessages);
+router.post('/sse', handlePostMessages);
+router.post('/', handlePostMessages);
 
 module.exports = router;

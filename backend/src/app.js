@@ -60,6 +60,19 @@ app.get('/health', (req, res) => {
   });
 });
 
+// OAuth & OpenID Discovery endpoints for AI agents / MCP clients
+app.get(['/.well-known/oauth-authorization-server', '/.well-known/openid-configuration'], (req, res) => {
+  res.status(200).json({
+    issuer: 'https://hub.avishka.site',
+    authorization_endpoint: null,
+    token_endpoint: null,
+    response_types_supported: [],
+    token_endpoint_auth_methods_supported: ['bearer', 'query_api_key'],
+    service_documentation: 'https://hub.avishka.site/docs',
+    note: 'PanelHub MCP supports direct Bearer token (Authorization: Bearer <key>) or query parameter (?apiKey=<key>).'
+  });
+});
+
 // Mount API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/servers', serverRoutes);
@@ -72,7 +85,12 @@ const frontendDistPath = path.resolve(__dirname, '../../frontend/dist');
 if (fs.existsSync(frontendDistPath)) {
   app.use(express.static(frontendDistPath));
   app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api') || req.path.startsWith('/health') || req.path.startsWith('/mcp')) {
+    if (
+      req.path.startsWith('/api') ||
+      req.path.startsWith('/health') ||
+      req.path.startsWith('/mcp') ||
+      req.path.startsWith('/.well-known')
+    ) {
       return next();
     }
     res.sendFile(path.join(frontendDistPath, 'index.html'));

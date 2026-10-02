@@ -125,4 +125,16 @@ jobs:
             # Set correct file permissions for Nginx
             sudo chmod -R 755 /var/www/panelhub/frontend/dist
 
+            # Ensure Nginx forwards /mcp and /.well-known to Node.js backend
+            for conf in /etc/nginx/sites-available/* /etc/nginx/conf.d/*; do
+              if [ -f "$conf" ]; then
+                sudo sed -i 's|location ~ \^/(api\|mcp)/|location ~ ^/(api\|mcp)|g' "$conf" 2>/dev/null || true
+                if grep -q "location /api" "$conf" && ! grep -q "mcp" "$conf"; then
+                  echo "Adding /mcp location to $conf..."
+                  sudo sed -i '/location \/api/i \    location /mcp {\n        proxy_pass http://127.0.0.1:5000;\n        proxy_http_version 1.1;\n        proxy_set_header Upgrade $http_upgrade;\n        proxy_set_header Connection "upgrade";\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n        proxy_buffering off;\n        proxy_cache off;\n        proxy_read_timeout 300s;\n    }\n' "$conf" 2>/dev/null || true
+                fi
+              fi
+            done
+            sudo nginx -t && sudo systemctl reload nginx || true
+
             echo "✅ PanelHub deployment succeeded!"

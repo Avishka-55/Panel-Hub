@@ -320,3 +320,48 @@ test('MCP Client: Connects via SSE and executes list_vpn_servers', async () => {
 
   await client.close();
 });
+
+test('MCP Discovery: /.well-known/oauth-authorization-server returns JSON without 404', async () => {
+  const fetchUrl = (path) =>
+    new Promise((resolve, reject) => {
+      http.get(`${baseUrl}${path}`, (res) => {
+        let body = '';
+        res.on('data', (d) => (body += d));
+        res.on('end', () => resolve({ status: res.statusCode, data: JSON.parse(body) }));
+      }).on('error', reject);
+    });
+
+  const res1 = await fetchUrl('/.well-known/oauth-authorization-server');
+  assert.equal(res1.status, 200);
+  assert.ok(res1.data.token_endpoint_auth_methods_supported.includes('bearer'));
+
+  const res2 = await fetchUrl('/api/mcp/.well-known/oauth-authorization-server');
+  assert.equal(res2.status, 200);
+  assert.ok(res2.data.token_endpoint_auth_methods_supported.includes('bearer'));
+});
+
+test('MCP POST Handler: POST /api/mcp without sessionId returns structured 400 instead of 404', async () => {
+  const postUrl = (path) =>
+    new Promise((resolve, reject) => {
+      const req = http.request(
+        `${baseUrl}${path}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        },
+        (res) => {
+          let body = '';
+          res.on('data', (d) => (body += d));
+          res.on('end', () => resolve({ status: res.statusCode, data: JSON.parse(body) }));
+        }
+      );
+      req.on('error', reject);
+      req.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }));
+      req.end();
+    });
+
+  const res = await postUrl('/api/mcp');
+  assert.equal(res.status, 400);
+  assert.equal(res.data.error.code, -32600);
+});
+
