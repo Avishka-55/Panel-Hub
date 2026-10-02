@@ -13,13 +13,15 @@ import {
   ChevronRight,
   AlertCircle,
   Bell,
-  RotateCcw
+  RotateCcw,
+  Sliders
 } from 'lucide-react';
 import { serversApi } from '../api/client';
 import { formatBytes } from '../utils/formatters';
 import SystemResourceWidget from '../components/SystemResourceWidget';
 import AlertSettingsModal from '../components/AlertSettingsModal';
 import ConfirmModal from '../components/ConfirmModal';
+import EditInboundModal from '../components/EditInboundModal';
 
 export default function ServerDetailPage({ server, onBack, onSelectInbound }) {
   const [currentServer, setCurrentServer] = useState(server);
@@ -28,9 +30,38 @@ export default function ServerDetailPage({ server, onBack, onSelectInbound }) {
   const [restartingXray, setRestartingXray] = useState(false);
   const [restartFeedback, setRestartFeedback] = useState(null);
   const [inbounds, setInbounds] = useState([]);
+  const [editingInbound, setEditingInbound] = useState(null);
+  const [resettingInbound, setResettingInbound] = useState(null);
+  const [resettingTrafficLoading, setResettingTrafficLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
+
+  const handleInboundUpdated = (updatedInbound) => {
+    setInbounds((prev) =>
+      prev.map((ib) => (ib.id === updatedInbound.id ? { ...ib, ...updatedInbound } : ib))
+    );
+  };
+
+  const handleConfirmResetTraffic = async () => {
+    if (!resettingInbound) return;
+    setResettingTrafficLoading(true);
+    try {
+      const res = await serversApi.resetInboundTraffic(server._id, resettingInbound.id);
+      if (res.success) {
+        setInbounds((prev) =>
+          prev.map((ib) => (ib.id === resettingInbound.id ? { ...ib, up: 0, down: 0 } : ib))
+        );
+        setResettingInbound(null);
+      } else {
+        alert(res.error || 'Failed to reset inbound traffic');
+      }
+    } catch (err) {
+      alert(err.response?.data?.error || err.message || 'Failed to reset inbound traffic');
+    } finally {
+      setResettingTrafficLoading(false);
+    }
+  };
 
   const handleRestartXray = async () => {
     setRestartingXray(true);
@@ -239,8 +270,13 @@ export default function ServerDetailPage({ server, onBack, onSelectInbound }) {
                     <div className="flex items-center gap-1.5 mt-0.5 font-mono">
                       <span className="font-semibold text-indigo-300">:{inbound.port}</span>
                       <span className="text-slate-600">•</span>
-                      <span className="text-slate-400">{inbound.total > 0 ? formatBytes(inbound.total) : 'Unlimited'}</span>
+                      <span className="text-slate-300 font-semibold">{inbound.total > 0 ? formatBytes(inbound.total) : 'Unlimited'}</span>
                     </div>
+                    {inbound.expiryTime > 0 && (
+                      <span className="text-[10px] text-amber-400 block mt-0.5 font-mono">
+                        Exp: {new Date(inbound.expiryTime).toLocaleDateString()}
+                      </span>
+                    )}
                   </div>
 
                   <div>
@@ -255,24 +291,46 @@ export default function ServerDetailPage({ server, onBack, onSelectInbound }) {
                         {formatBytes(inbound.down)}
                       </span>
                     </div>
+                    {inbound.total > 0 && (
+                      <div className="w-full bg-slate-800 h-1.5 rounded-full mt-1.5 overflow-hidden">
+                        <div
+                          className="bg-indigo-500 h-full rounded-full transition-all"
+                          style={{
+                            width: `${Math.min(100, Math.round((((inbound.up || 0) + (inbound.down || 0)) / inbound.total) * 100))}%`
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {/* Action button: Manage Clients */}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSelectInbound(inbound);
-                  }}
-                  className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-indigo-600/90 hover:bg-indigo-600 text-white shadow-sm transition-all"
-                >
-                  <div className="flex items-center gap-2">
-                    <Users className="w-4 h-4 text-indigo-200" />
-                    <span>Manage Clients ({inbound.clientCount || 0})</span>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-indigo-200" />
-                </button>
+                {/* Actions: Configure Quota, Reset, Manage Clients */}
+                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    onClick={() => setEditingInbound(inbound)}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700/60 transition-colors"
+                  >
+                    <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Quota & Limits</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setResettingInbound(inbound)}
+                    title="Reset monthly traffic to 0"
+                    className="p-2 rounded-xl text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition-colors"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onSelectInbound(inbound)}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-indigo-600/90 hover:bg-indigo-600 text-white shadow-sm transition-all"
+                  >
+                    <Users className="w-3.5 h-3.5 text-indigo-200" />
+                    <span>Clients ({inbound.clientCount || 0})</span>
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -294,7 +352,7 @@ export default function ServerDetailPage({ server, onBack, onSelectInbound }) {
                   <th className="px-4 py-3">Total Quota</th>
                   <th className="px-4 py-3">Clients</th>
                   <th className="px-4 py-3">Status</th>
-                  <th className="px-6 py-3 text-right">Action</th>
+                  <th className="px-6 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 text-slate-300">
@@ -327,19 +385,38 @@ export default function ServerDetailPage({ server, onBack, onSelectInbound }) {
 
                       <td className="px-4 py-4">
                         <div className="flex flex-col gap-0.5">
-                          <span className="flex items-center gap-1 text-[11px] text-emerald-400">
+                          <span className="flex items-center gap-1 text-[11px] text-emerald-400 font-mono">
                             <ArrowUpRight className="w-3 h-3" />
                             {formatBytes(inbound.up)}
                           </span>
-                          <span className="flex items-center gap-1 text-[11px] text-blue-400">
+                          <span className="flex items-center gap-1 text-[11px] text-blue-400 font-mono">
                             <ArrowDownLeft className="w-3 h-3" />
                             {formatBytes(inbound.down)}
                           </span>
                         </div>
                       </td>
 
-                      <td className="px-4 py-4 text-slate-400">
-                        {inbound.total > 0 ? formatBytes(inbound.total) : 'Unlimited'}
+                      <td className="px-4 py-4">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-semibold text-slate-200 font-mono">
+                            {inbound.total > 0 ? formatBytes(inbound.total) : 'Unlimited'}
+                          </span>
+                          {inbound.total > 0 && (
+                            <div className="w-24 bg-slate-800 h-1.5 rounded-full mt-1 overflow-hidden">
+                              <div
+                                className="bg-indigo-500 h-full rounded-full transition-all"
+                                style={{
+                                  width: `${Math.min(100, Math.round((((inbound.up || 0) + (inbound.down || 0)) / inbound.total) * 100))}%`
+                                }}
+                              />
+                            </div>
+                          )}
+                          {inbound.expiryTime > 0 && (
+                            <span className="text-[10px] text-amber-400 font-mono">
+                              Exp: {new Date(inbound.expiryTime).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       <td className="px-4 py-4">
@@ -364,13 +441,29 @@ export default function ServerDetailPage({ server, onBack, onSelectInbound }) {
                       </td>
 
                       <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          onClick={() => onSelectInbound(inbound)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm transition-all"
-                        >
-                          <span>Manage Clients</span>
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => setEditingInbound(inbound)}
+                            title="Configure monthly data limit, expiration, or inbound settings"
+                            className="p-1.5 rounded-lg text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700/60 transition-colors"
+                          >
+                            <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+                          </button>
+                          <button
+                            onClick={() => setResettingInbound(inbound)}
+                            title="Reset cumulative traffic counters to 0 for a new monthly cycle"
+                            className="p-1.5 rounded-lg text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition-colors"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => onSelectInbound(inbound)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm transition-all"
+                          >
+                            <span>Clients</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -400,6 +493,27 @@ export default function ServerDetailPage({ server, onBack, onSelectInbound }) {
         confirmText="Restart Xray"
         danger={true}
         loading={restartingXray}
+      />
+
+      {/* Edit Inbound Quota & Settings Modal */}
+      <EditInboundModal
+        isOpen={Boolean(editingInbound)}
+        onClose={() => setEditingInbound(null)}
+        serverId={server._id}
+        inbound={editingInbound}
+        onInboundUpdated={handleInboundUpdated}
+      />
+
+      {/* Confirm Reset Inbound Traffic Modal */}
+      <ConfirmModal
+        isOpen={Boolean(resettingInbound)}
+        onClose={() => setResettingInbound(null)}
+        onConfirm={handleConfirmResetTraffic}
+        title={`Reset Traffic for Inbound #${resettingInbound?.id}`}
+        message={`Are you sure you want to reset cumulative bandwidth counters (Upload + Download) to 0 for inbound "${resettingInbound?.remark || '#' + resettingInbound?.id}" on ${server.nickname}? This starts a fresh monthly billing cycle.`}
+        confirmText="Reset to 0"
+        danger={false}
+        loading={resettingTrafficLoading}
       />
     </div>
   );

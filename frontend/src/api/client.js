@@ -128,6 +128,14 @@ export const serversApi = {
     const response = await api.get(`/servers/${id}/inbounds`);
     return response.data;
   },
+  updateInbound: async (serverId, inboundId, updateData) => {
+    const response = await api.patch(`/servers/${serverId}/inbounds/${inboundId}`, updateData);
+    return response.data;
+  },
+  resetInboundTraffic: async (serverId, inboundId) => {
+    const response = await api.post(`/servers/${serverId}/inbounds/${inboundId}/reset-traffic`);
+    return response.data;
+  },
   getInboundClients: async (serverId, inboundId) => {
     const response = await api.get(`/servers/${serverId}/inbounds/${inboundId}/clients`);
     return response.data;
