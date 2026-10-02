@@ -622,30 +622,7 @@ function createPanelHubMcpServer(user) {
   return mcpServer;
 }
 
-/**
- * GET /mcp
- * Status and discovery endpoint for PanelHub MCP Server.
- */
-router.get('/', (req, res) => {
-  const basePath = req.baseUrl || '/mcp';
-  res.status(200).json({
-    service: 'PanelHub Model Context Protocol (MCP) Server',
-    version: '1.0.0',
-    protocol: 'SSE (Server-Sent Events)',
-    endpoints: {
-      sse: `${basePath}/sse`,
-      messages: `${basePath}/messages`
-    },
-    status: 'operational'
-  });
-});
-
-/**
- * GET /mcp/sse
- * Establishes an SSE transport connection for Claude Desktop, Cursor, or ChatGPT.
- * Protected by authenticateMcp.
- */
-router.get('/sse', authenticateMcp, async (req, res) => {
+async function handleSseConnection(req, res) {
   try {
     // Disable Nginx proxy buffering for Server-Sent Events
     res.setHeader('X-Accel-Buffering', 'no');
@@ -671,7 +648,38 @@ router.get('/sse', authenticateMcp, async (req, res) => {
       res.status(500).json({ success: false, error: error.message });
     }
   }
+}
+
+/**
+ * GET /mcp or /api/mcp
+ * Dual-purpose endpoint:
+ * 1. If accessed with Accept: text/event-stream or with apiKey/Bearer token, establishes SSE transport.
+ * 2. Otherwise returns service discovery JSON manifest.
+ */
+router.get('/', (req, res, next) => {
+  const isSse = req.headers.accept && req.headers.accept.includes('text/event-stream');
+  if (isSse || req.query.apiKey || (req.headers.authorization && req.headers.authorization.startsWith('Bearer '))) {
+    return authenticateMcp(req, res, () => handleSseConnection(req, res));
+  }
+
+  const basePath = req.baseUrl || '/mcp';
+  res.status(200).json({
+    service: 'PanelHub Model Context Protocol (MCP) Server',
+    version: '1.0.0',
+    protocol: 'SSE (Server-Sent Events)',
+    endpoints: {
+      sse: `${basePath}/sse`,
+      messages: `${basePath}/messages`
+    },
+    status: 'operational'
+  });
 });
+
+/**
+ * GET /mcp/sse or /api/mcp/sse
+ * Explicit SSE endpoint for clients specifying the /sse subpath.
+ */
+router.get('/sse', authenticateMcp, handleSseConnection);
 
 /**
  * POST /mcp/messages
