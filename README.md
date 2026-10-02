@@ -395,6 +395,7 @@ Connect Claude Desktop, Cursor, ChatGPT, and AI agents directly to PanelHub via 
 - `delete_client`: Delete a client by ID/UUID from an inbound.
 - `reset_client_traffic`: Reset uploaded/downloaded bandwidth counters for a client email.
 - `restart_xray`: Reboot the live Xray core engine.
+- `get_client_link`: Retrieve the direct connection URI (vless://, vmess://, trojan://, shadowsocks://) and 3x-ui subscription URL for any client.
 
 ---
 

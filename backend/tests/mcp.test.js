@@ -148,7 +148,7 @@ test('MCP Client: Connects via SSE and executes list_vpn_servers', async () => {
 
   // 5. Verify list tools
   const tools = await client.listTools();
-  assert.equal(tools.tools.length, 8);
+  assert.equal(tools.tools.length, 9);
   const toolNames = tools.tools.map((t) => t.name);
   assert.ok(toolNames.includes('list_vpn_servers'));
   assert.ok(toolNames.includes('get_server_status'));
@@ -158,6 +158,7 @@ test('MCP Client: Connects via SSE and executes list_vpn_servers', async () => {
   assert.ok(toolNames.includes('delete_client'));
   assert.ok(toolNames.includes('reset_client_traffic'));
   assert.ok(toolNames.includes('restart_xray'));
+  assert.ok(toolNames.includes('get_client_link'));
 
   // 6. Execute tool
   const result = await client.callTool({

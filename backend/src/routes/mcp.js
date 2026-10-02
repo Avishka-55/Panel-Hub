@@ -7,6 +7,7 @@ const Server = require('../models/Server');
 const { decrypt } = require('../utils/decrypt');
 const panelService = require('../services/panelService');
 const { authenticateMcp } = require('../middleware/mcpAuth');
+const { generateClientLinks } = require('../utils/linkGenerator');
 
 const router = express.Router();
 
@@ -67,6 +68,7 @@ function createPanelHubMcpServer(user) {
 3. Client Provisioning: Provision new VPN client accounts with traffic quotas in GB and duration limits in days (add_client).
 4. Client Inspection & Management: Inspect registered clients and live bandwidth consumption (list_clients), reset traffic counters (reset_client_traffic), and delete clients (delete_client).
 5. Core Engine Maintenance: Soft-restart the remote Xray core engine to clear bottlenecks or reload configurations (restart_xray).
+6. VPN Links & Subscriptions: Retrieve direct connection URIs (vless://, vmess://, trojan://, shadowsocks://) and 3x-ui subscription URLs for clients using get_client_link. Both connection links and subscription URLs are also automatically returned when calling add_client and list_clients.
 
 ### Operational Rules & Best Practices:
 - Flexible Identifiers: In all tools accepting a "server" argument, you may supply either the server's human-friendly nickname (e.g., "Singapore", "Oracle 2", "Azure sg") or its MongoDB ObjectId.
@@ -393,12 +395,17 @@ function createPanelHubMcpServer(user) {
 
           for (const c of clients) {
             const stats = clientStatsMap.get(c.email) || {};
+            const links = generateClientLinks(c, ib, server.panelUrl);
             allClients.push({
               inboundId: ib.id,
               inboundRemark: ib.remark,
               protocol: ib.protocol,
               id: c.id,
               email: c.email,
+              subId: c.subId || '',
+              vlessLink: links.v2rayLink,
+              connectionLink: links.v2rayLink,
+              subscriptionUrl: links.subUrl,
               enable: c.enable !== false,
               totalBytes: c.totalGB || 0,
               usedUpBytes: stats.up || 0,
@@ -436,7 +443,7 @@ function createPanelHubMcpServer(user) {
   // TOOL 5: add_client
   mcpServer.tool(
     'add_client',
-    'Provision a new VPN client on a specific server and inbound. Generates user credentials with optional data quota in GB and time limit in days. Returns the newly created client UUID and configuration details.',
+    'Provision a new VPN client on a specific server and inbound. Generates user credentials with optional data quota in GB and time limit in days. Returns the newly created client UUID, configuration details, direct connection URI (vless://), and subscription URL.',
     {
       server: z.string().describe('Server nickname or MongoDB ObjectId'),
       inboundId: z.number().describe('Target Inbound ID (found from list_inbounds)'),
@@ -464,6 +471,21 @@ function createPanelHubMcpServer(user) {
           expiryTime
         });
 
+        // Generate direct VLESS / subscription links for immediate client use
+        let connectionLink = '';
+        let subscriptionUrl = '';
+        try {
+          const inboundsData = await panelService.getInbounds(server.panelUrl, authConfig);
+          const inbounds = Array.isArray(inboundsData.obj) ? inboundsData.obj : Array.isArray(inboundsData) ? inboundsData : [];
+          const targetIb = inbounds.find((ib) => ib.id === Number(inboundId));
+          if (targetIb) {
+            const clientPayload = result.client || { email, id: result.id, subId: result.subId };
+            const links = generateClientLinks(clientPayload, targetIb, server.panelUrl);
+            connectionLink = links.v2rayLink;
+            subscriptionUrl = links.subUrl;
+          }
+        } catch (_) {}
+
         return {
           content: [
             {
@@ -477,6 +499,9 @@ function createPanelHubMcpServer(user) {
                   email,
                   totalGB: totalGB > 0 ? `${totalGB} GB` : 'Unlimited',
                   expiresIn: expiryDays > 0 ? `${expiryDays} days` : 'Never',
+                  vlessLink: connectionLink,
+                  connectionLink: connectionLink,
+                  subscriptionUrl: subscriptionUrl,
                   clientData: result
                 },
                 null,
@@ -614,6 +639,96 @@ function createPanelHubMcpServer(user) {
         return {
           isError: true,
           content: [{ type: 'text', text: `Failed to restart Xray: ${err.message}` }]
+        };
+      }
+    }
+  );
+
+  // TOOL 9: get_client_link
+  mcpServer.tool(
+    'get_client_link',
+    'Retrieve the direct VPN connection URI (vless://, vmess://, trojan://, or shadowsocks://) and 3x-ui subscription URL for a specific client on a server.',
+    {
+      server: z.string().describe('Server nickname (e.g. "Singapore", "Oracle 2") or MongoDB ObjectId'),
+      client: z.string().describe('Client email, username, or UUID/ID (e.g. "alice@mobile" or "c1a11111-...")'),
+      inboundId: z.number().optional().describe('Optional specific Inbound ID')
+    },
+    async ({ server: serverIdentifier, client: clientIdentifier, inboundId }) => {
+      try {
+        const server = await findUserServer(user._id, serverIdentifier);
+        if (!server) {
+          return {
+            isError: true,
+            content: [{ type: 'text', text: `Server "${serverIdentifier}" not found.` }]
+          };
+        }
+
+        const authConfig = getDecryptedAuthConfig(server);
+        const inboundsData = await panelService.getInbounds(server.panelUrl, authConfig);
+        const inbounds = Array.isArray(inboundsData.obj) ? inboundsData.obj : Array.isArray(inboundsData) ? inboundsData : [];
+
+        const needle = clientIdentifier.trim().toLowerCase();
+        let matchedClient = null;
+        let matchedInbound = null;
+
+        for (const ib of inbounds) {
+          if (inboundId !== undefined && ib.id !== inboundId) continue;
+
+          let clients = [];
+          try {
+            const settings = typeof ib.settings === 'string' ? JSON.parse(ib.settings) : ib.settings;
+            clients = settings?.clients || [];
+          } catch (_) {}
+
+          for (const c of clients) {
+            const email = (c.email || '').trim().toLowerCase();
+            const id = String(c.id || '').trim().toLowerCase();
+            if (email === needle || id === needle || email.includes(needle)) {
+              matchedClient = c;
+              matchedInbound = ib;
+              break;
+            }
+          }
+          if (matchedClient) break;
+        }
+
+        if (!matchedClient || !matchedInbound) {
+          return {
+            isError: true,
+            content: [{ type: 'text', text: `Client "${clientIdentifier}" not found on server "${server.nickname}".` }]
+          };
+        }
+
+        const links = generateClientLinks(matchedClient, matchedInbound, server.panelUrl);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  server: server.nickname,
+                  clientEmail: matchedClient.email,
+                  clientId: matchedClient.id,
+                  subId: matchedClient.subId || '',
+                  protocol: matchedInbound.protocol,
+                  port: matchedInbound.port,
+                  inboundRemark: matchedInbound.remark,
+                  vlessLink: links.v2rayLink,
+                  connectionLink: links.v2rayLink,
+                  subscriptionUrl: links.subUrl,
+                  instructions: 'Import the connectionLink (e.g. vless://...) directly into v2rayN, v2rayNG, Sing-box, Nekoray, or Shadowrocket, or subscribe using the subscriptionUrl.'
+                },
+                null,
+                2
+              )
+            }
+          ]
+        };
+      } catch (err) {
+        return {
+          isError: true,
+          content: [{ type: 'text', text: `Failed to get client link: ${err.message}` }]
         };
       }
     }
