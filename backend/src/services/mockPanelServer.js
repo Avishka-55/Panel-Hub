@@ -439,6 +439,40 @@ function createMock3xUiServer(port = 0, defaultUsername = 'admin', defaultPasswo
       return res.end(JSON.stringify({ success: false, msg: 'Failed to add client' }));
     }
 
+    // Route: POST /panel/api/inbounds/update/:id
+    const inboundUpdateMatch = pathname.match(/^\/panel\/api\/inbounds\/update\/(\d+)$/);
+    if (inboundUpdateMatch && req.method === 'POST') {
+      const inboundId = Number(inboundUpdateMatch[1]);
+      const targetIb = mockInbounds.find((ib) => ib.id === inboundId);
+      if (targetIb) {
+        if (parsedBody.total !== undefined) targetIb.total = Number(parsedBody.total);
+        if (parsedBody.expiryTime !== undefined) targetIb.expiryTime = Number(parsedBody.expiryTime);
+        if (parsedBody.enable !== undefined) targetIb.enable = Boolean(parsedBody.enable);
+        if (parsedBody.remark !== undefined) targetIb.remark = parsedBody.remark;
+        if (parsedBody.port !== undefined) targetIb.port = Number(parsedBody.port);
+        if (parsedBody.listen !== undefined) targetIb.listen = parsedBody.listen;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ success: true, msg: 'Inbound updated', obj: targetIb }));
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: false, msg: 'Inbound not found' }));
+    }
+
+    // Route: POST /panel/api/inbounds/:id/resetTraffic OR /panel/api/inbounds/resetTraffic/:id
+    const inboundResetMatch = pathname.match(/^\/panel\/api\/inbounds\/(\d+)\/resetTraffic$/) || pathname.match(/^\/panel\/api\/inbounds\/resetTraffic\/(\d+)$/);
+    if (inboundResetMatch && req.method === 'POST') {
+      const inboundId = Number(inboundResetMatch[1]);
+      const targetIb = mockInbounds.find((ib) => ib.id === inboundId);
+      if (targetIb) {
+        targetIb.up = 0;
+        targetIb.down = 0;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ success: true, msg: 'Inbound traffic reset' }));
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: false, msg: 'Inbound not found' }));
+    }
+
     // 404
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: false, msg: 'Endpoint not found' }));

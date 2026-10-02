@@ -69,11 +69,12 @@ function createPanelHubMcpServer(user) {
 4. Client Inspection & Management: Inspect registered clients and live bandwidth consumption (list_clients), reset traffic counters (reset_client_traffic), and delete clients (delete_client).
 5. Core Engine Maintenance: Soft-restart the remote Xray core engine to clear bottlenecks or reload configurations (restart_xray).
 6. VPN Links & Subscriptions: Retrieve direct connection URIs (vless://, vmess://, trojan://, shadowsocks://) and 3x-ui subscription URLs for clients using get_client_link. Both connection links and subscription URLs are also automatically returned when calling add_client and list_clients.
+7. Inbound Data Limits & Quotas: Set or modify monthly/overall data limits (totalGB) and expiration on an inbound using update_inbound, and reset monthly counters back to 0 using reset_inbound_traffic.
 
 ### Operational Rules & Best Practices:
 - Flexible Identifiers: In all tools accepting a "server" argument, you may supply either the server's human-friendly nickname (e.g., "Singapore", "Oracle 2", "Azure sg") or its MongoDB ObjectId.
 - Discovery First: Before provisioning a client with add_client, always call list_vpn_servers to verify the node is online, and then list_inbounds to select the right inbound ID.
-- Quota Units: Quotas in add_client are specified in Gigabytes (e.g. 20 for 20 GB, 0 = unlimited). Durations are specified in days (e.g. 30 for 30 days, 0 = no expiry).
+- Quota Units: Quotas in add_client and update_inbound are specified in Gigabytes (e.g. 20 for 20 GB, 500 for 500 GB, 0 = unlimited). Durations are specified in days (e.g. 30 for 30 days / 1 month, 0 = no expiry).
 - Safe Deletion: When asked to delete a client, verify the client UUID and inbound ID with the user before executing.
 - Friendly Reporting: Format results in clear tables or bullet points with human-readable bandwidth (MB/GB) and timestamps.`;
 
@@ -322,6 +323,9 @@ function createPanelHubMcpServer(user) {
             clientCount = settings?.clients?.length || 0;
           } catch (_) {}
 
+          const usedBytes = (ib.up || 0) + (ib.down || 0);
+          const totalQuotaBytes = ib.total || 0;
+
           return {
             inboundId: ib.id,
             port: ib.port,
@@ -330,9 +334,13 @@ function createPanelHubMcpServer(user) {
             tag: ib.tag,
             enable: ib.enable,
             clientCount,
-            upTrafficBytes: ib.up,
-            downTrafficBytes: ib.down,
-            totalTrafficBytes: ib.total
+            upTrafficBytes: ib.up || 0,
+            downTrafficBytes: ib.down || 0,
+            usedTrafficBytes: usedBytes,
+            usedTrafficFormatted: (usedBytes / 1073741824).toFixed(2) + ' GB',
+            quotaLimitBytes: totalQuotaBytes,
+            quotaLimitFormatted: totalQuotaBytes > 0 ? (totalQuotaBytes / 1073741824).toFixed(2) + ' GB' : 'Unlimited',
+            expiryDate: ib.expiryTime > 0 ? new Date(ib.expiryTime).toISOString() : 'Never'
           };
         });
 
@@ -731,6 +739,112 @@ function createPanelHubMcpServer(user) {
         return {
           isError: true,
           content: [{ type: 'text', text: `Failed to get client link: ${err.message}` }]
+        };
+      }
+    }
+  );
+
+  // TOOL 10: update_inbound
+  mcpServer.tool(
+    'update_inbound',
+    'Set or modify overall bandwidth limits (data quota in GB), expiration periods, active status, or traffic counters for an entire inbound on a server. Useful for setting monthly data limits (e.g. 500 GB for 30 days) on a specific inbound.',
+    {
+      server: z.string().describe('Server nickname or MongoDB ObjectId'),
+      inboundId: z.number().describe('Target Inbound ID (obtained from list_inbounds)'),
+      totalGB: z.number().optional().describe('Total data limit in Gigabytes for the whole inbound (e.g. 500 for 500 GB). Set 0 for unlimited'),
+      expiryDays: z.number().optional().describe('Validity duration in days from today (e.g. 30 for 30 days / monthly). Set 0 for no expiration'),
+      resetTraffic: z.boolean().optional().describe('Set true to reset cumulative uploaded/downloaded traffic counters back to 0 (e.g. for a new monthly cycle)'),
+      enable: z.boolean().optional().describe('Enable or disable the inbound listener (true/false)'),
+      remark: z.string().optional().describe('Optional new label/name for the inbound')
+    },
+    async ({ server: serverIdentifier, inboundId, totalGB, expiryDays, resetTraffic, enable, remark }) => {
+      try {
+        const server = await findUserServer(user._id, serverIdentifier);
+        if (!server) {
+          return {
+            isError: true,
+            content: [{ type: 'text', text: `Server "${serverIdentifier}" not found.` }]
+          };
+        }
+
+        const authConfig = getDecryptedAuthConfig(server);
+        const result = await panelService.updateInbound(server.panelUrl, authConfig, inboundId, {
+          totalGB,
+          expiryDays,
+          resetTraffic,
+          enable,
+          remark
+        });
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  success: true,
+                  message: `Inbound #${inboundId} on ${server.nickname} updated successfully!`,
+                  server: server.nickname,
+                  inboundId,
+                  totalQuota: totalGB !== undefined ? (totalGB > 0 ? `${totalGB} GB` : 'Unlimited') : undefined,
+                  expiresIn: expiryDays !== undefined ? (expiryDays > 0 ? `${expiryDays} days` : 'Never') : undefined,
+                  trafficReset: Boolean(resetTraffic),
+                  enable: result.enable,
+                  remark: result.remark
+                },
+                null,
+                2
+              )
+            }
+          ]
+        };
+      } catch (err) {
+        return {
+          isError: true,
+          content: [{ type: 'text', text: `Failed to update inbound: ${err.message}` }]
+        };
+      }
+    }
+  );
+
+  // TOOL 11: reset_inbound_traffic
+  mcpServer.tool(
+    'reset_inbound_traffic',
+    'Reset cumulative uploaded and downloaded bandwidth counters back to 0 for an entire inbound on a server (starts a fresh monthly or billing cycle).',
+    {
+      server: z.string().describe('Server nickname or MongoDB ObjectId'),
+      inboundId: z.number().describe('Target Inbound ID (obtained from list_inbounds)')
+    },
+    async ({ server: serverIdentifier, inboundId }) => {
+      try {
+        const server = await findUserServer(user._id, serverIdentifier);
+        if (!server) {
+          return {
+            isError: true,
+            content: [{ type: 'text', text: `Server "${serverIdentifier}" not found.` }]
+          };
+        }
+
+        const authConfig = getDecryptedAuthConfig(server);
+        await panelService.resetInboundTraffic(server.panelUrl, authConfig, inboundId);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                message: `Inbound #${inboundId} traffic counters on ${server.nickname} have been reset to 0.`,
+                server: server.nickname,
+                inboundId
+              })
+            }
+          ]
+        };
+      } catch (err) {
+        return {
+          isError: true,
+          content: [{ type: 'text', text: `Failed to reset inbound traffic: ${err.message}` }]
         };
       }
     }

@@ -1023,6 +1023,127 @@ async function restartXray(panelUrl, authConfigOrUsername, password) {
   throw new Error(lastError?.message || 'Failed to restart Xray engine on this panel');
 }
 
+/**
+ * Updates an inbound's configuration, bandwidth quota (totalGB), or expiry time live on 3x-ui.
+ */
+async function updateInbound(panelUrl, authConfigOrUsername, passwordOrInboundId, inboundIdOrUpdateData, maybeUpdateData) {
+  let authConfig;
+  let inboundId;
+  let updateData;
+
+  if (typeof authConfigOrUsername === 'object' && authConfigOrUsername !== null) {
+    authConfig = authConfigOrUsername;
+    inboundId = passwordOrInboundId;
+    updateData = inboundIdOrUpdateData || {};
+  } else {
+    authConfig = { username: authConfigOrUsername, password: passwordOrInboundId };
+    inboundId = inboundIdOrUpdateData;
+    updateData = maybeUpdateData || {};
+  }
+
+  const { client } = await getAuthenticatedClient(panelUrl, authConfig);
+
+  // Retrieve current inbounds to merge unchanged settings
+  const response = await client.get('panel/api/inbounds/list');
+  if (!response.data?.success) {
+    throw new Error(response.data?.msg || 'Failed to retrieve inbounds list to update inbound');
+  }
+
+  const inbounds = response.data.obj || [];
+  const targetInbound = inbounds.find((ib) => String(ib.id) === String(inboundId));
+  if (!targetInbound) {
+    throw new Error(`Inbound with ID "${inboundId}" not found on this 3x-ui panel`);
+  }
+
+  let totalBytes = targetInbound.total || 0;
+  if (updateData.totalGB !== undefined) {
+    totalBytes = Number(updateData.totalGB) > 0 ? Number(updateData.totalGB) * 1073741824 : 0;
+  } else if (updateData.total !== undefined) {
+    totalBytes = Number(updateData.total);
+  }
+
+  let expiryTime = targetInbound.expiryTime || 0;
+  if (updateData.expiryDays !== undefined) {
+    expiryTime = Number(updateData.expiryDays) > 0 ? Date.now() + Number(updateData.expiryDays) * 86400000 : 0;
+  } else if (updateData.expiryTime !== undefined) {
+    expiryTime = Number(updateData.expiryTime);
+  }
+
+  const payload = {
+    enable: updateData.enable !== undefined ? Boolean(updateData.enable) : Boolean(targetInbound.enable),
+    remark: updateData.remark !== undefined ? updateData.remark : targetInbound.remark,
+    listen: updateData.listen !== undefined ? updateData.listen : (targetInbound.listen || ''),
+    port: updateData.port !== undefined ? Number(updateData.port) : targetInbound.port,
+    protocol: targetInbound.protocol,
+    expiryTime,
+    total: totalBytes,
+    settings: typeof targetInbound.settings === 'object' ? JSON.stringify(targetInbound.settings) : targetInbound.settings,
+    streamSettings: typeof targetInbound.streamSettings === 'object' ? JSON.stringify(targetInbound.streamSettings) : targetInbound.streamSettings,
+    sniffing: typeof targetInbound.sniffing === 'object' ? JSON.stringify(targetInbound.sniffing) : targetInbound.sniffing
+  };
+
+  const updateRes = await client.post(`panel/api/inbounds/update/${inboundId}`, payload);
+  if (!updateRes.data?.success) {
+    throw new Error(updateRes.data?.msg || 'Failed to update inbound on 3x-ui panel');
+  }
+
+  // If resetTraffic is requested, reset the counters
+  if (updateData.resetTraffic) {
+    try {
+      await resetInboundTraffic(panelUrl, authConfig, inboundId);
+    } catch (_) {}
+  }
+
+  return {
+    success: true,
+    inboundId: Number(inboundId),
+    totalGB: totalBytes > 0 ? totalBytes / 1073741824 : 0,
+    expiryTime,
+    enable: payload.enable,
+    remark: payload.remark
+  };
+}
+
+/**
+ * Resets cumulative traffic counters for an inbound back to 0.
+ */
+async function resetInboundTraffic(panelUrl, authConfigOrUsername, passwordOrInboundId, maybeInboundId) {
+  let authConfig;
+  let inboundId;
+
+  if (typeof authConfigOrUsername === 'object' && authConfigOrUsername !== null) {
+    authConfig = authConfigOrUsername;
+    inboundId = passwordOrInboundId;
+  } else {
+    authConfig = { username: authConfigOrUsername, password: passwordOrInboundId };
+    inboundId = maybeInboundId;
+  }
+
+  const { client } = await getAuthenticatedClient(panelUrl, authConfig);
+
+  // Strategy 1: POST /panel/api/inbounds/:id/resetTraffic
+  try {
+    const res1 = await client.post(`panel/api/inbounds/${inboundId}/resetTraffic`, {});
+    if (res1.data?.success) return { success: true, inboundId: Number(inboundId) };
+  } catch (err) {
+    if (err.response && err.response.status !== 404) {
+      throw new Error(err.response.data?.msg || err.message);
+    }
+  }
+
+  // Strategy 2: POST /panel/api/inbounds/resetTraffic/:id
+  try {
+    const res2 = await client.post(`panel/api/inbounds/resetTraffic/${inboundId}`, {});
+    if (res2.data?.success) return { success: true, inboundId: Number(inboundId) };
+  } catch (err) {
+    if (err.response && err.response.status !== 404) {
+      throw new Error(err.response.data?.msg || err.message);
+    }
+  }
+
+  return { success: true, inboundId: Number(inboundId) };
+}
+
 module.exports = {
   authenticate: authenticateWithCredentials,
   getAuthenticatedClient,
@@ -1033,6 +1154,8 @@ module.exports = {
   deleteClient,
   resetClientTraffic,
   addClient,
+  updateInbound,
+  resetInboundTraffic,
   getServerStatus,
   restartXray
 };

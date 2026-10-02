@@ -253,6 +253,48 @@ test('panelService.resetClientTraffic: disambiguates arguments when passed as (i
   assert.equal(resetRes.email, 'alice@example.com');
 });
 
+test('panelService.updateInbound: updates total quota and expiry on inbound', async () => {
+  const result = await panelService.updateInbound(
+    mockServer.url,
+    'admin',
+    'password123',
+    1,
+    {
+      totalGB: 250,
+      expiryDays: 30,
+      remark: 'US-East-Updated-Quota'
+    }
+  );
+
+  assert.equal(result.success, true);
+  assert.equal(result.inboundId, 1);
+  assert.equal(result.totalGB, 250);
+  assert.equal(result.remark, 'US-East-Updated-Quota');
+
+  const inbounds = await panelService.getInbounds(mockServer.url, 'admin', 'password123');
+  const ib1 = inbounds.find((ib) => ib.id === 1);
+  assert.equal(ib1.total, 250 * 1073741824);
+  assert.equal(ib1.remark, 'US-East-Updated-Quota');
+});
+
+test('panelService.resetInboundTraffic: resets up and down traffic counters on inbound', async () => {
+  const result = await panelService.resetInboundTraffic(
+    mockServer.url,
+    'admin',
+    'password123',
+    1
+  );
+
+  assert.equal(result.success, true);
+  assert.equal(result.inboundId, 1);
+
+  const inbounds = await panelService.getInbounds(mockServer.url, 'admin', 'password123');
+  const ib1 = inbounds.find((ib) => ib.id === 1);
+  assert.equal(ib1.up, 0);
+  assert.equal(ib1.down, 0);
+});
+
+
 
 
 

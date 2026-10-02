@@ -579,6 +579,85 @@ router.get('/:id/inbounds', proxyLimiter, async (req, res) => {
 });
 
 /**
+ * PATCH /api/servers/:id/inbounds/:inboundId
+ * Update inbound bandwidth quota (totalGB), expiry, or status.
+ */
+router.patch('/:id/inbounds/:inboundId', proxyLimiter, async (req, res) => {
+  try {
+    const { id, inboundId } = req.params;
+    const server = await getOwnedServerWithCredentials(id, req.user._id);
+    if (!server) {
+      return res.status(404).json({ success: false, error: 'Server not found or access denied' });
+    }
+
+    const authConfig = getDecryptedAuthConfig(server);
+    const { totalGB, expiryDays, enable, remark, resetTraffic } = req.body;
+
+    try {
+      const result = await panelService.updateInbound(server.panelUrl, authConfig, inboundId, {
+        totalGB,
+        expiryDays,
+        enable,
+        remark,
+        resetTraffic
+      });
+
+      return res.status(200).json({
+        success: true,
+        inbound: result
+      });
+    } catch (panelErr) {
+      return res.status(502).json({
+        success: false,
+        error: `3x-ui panel error: ${panelErr.message}`
+      });
+    }
+  } catch (error) {
+    console.error('[Update Inbound Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to update inbound'
+    });
+  }
+});
+
+/**
+ * POST /api/servers/:id/inbounds/:inboundId/reset-traffic
+ * Reset cumulative traffic for an inbound back to 0.
+ */
+router.post('/:id/inbounds/:inboundId/reset-traffic', proxyLimiter, async (req, res) => {
+  try {
+    const { id, inboundId } = req.params;
+    const server = await getOwnedServerWithCredentials(id, req.user._id);
+    if (!server) {
+      return res.status(404).json({ success: false, error: 'Server not found or access denied' });
+    }
+
+    const authConfig = getDecryptedAuthConfig(server);
+
+    try {
+      const result = await panelService.resetInboundTraffic(server.panelUrl, authConfig, inboundId);
+      return res.status(200).json({
+        success: true,
+        message: `Inbound #${inboundId} traffic reset to 0`,
+        inboundId: result.inboundId
+      });
+    } catch (panelErr) {
+      return res.status(502).json({
+        success: false,
+        error: `3x-ui panel error: ${panelErr.message}`
+      });
+    }
+  } catch (error) {
+    console.error('[Reset Inbound Traffic Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to reset inbound traffic'
+    });
+  }
+});
+
+/**
  * GET /api/servers/:id/inbounds/:inboundId/clients
  * Live inbound clients proxy.
  */

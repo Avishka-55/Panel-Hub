@@ -157,7 +157,7 @@ test('MCP Client: Connects via SSE and executes list_vpn_servers', async () => {
 
   // 5. Verify list tools
   const tools = await client.listTools();
-  assert.equal(tools.tools.length, 9);
+  assert.equal(tools.tools.length, 11);
   const toolNames = tools.tools.map((t) => t.name);
   assert.ok(toolNames.includes('list_vpn_servers'));
   assert.ok(toolNames.includes('get_server_status'));
@@ -168,6 +168,8 @@ test('MCP Client: Connects via SSE and executes list_vpn_servers', async () => {
   assert.ok(toolNames.includes('reset_client_traffic'));
   assert.ok(toolNames.includes('restart_xray'));
   assert.ok(toolNames.includes('get_client_link'));
+  assert.ok(toolNames.includes('update_inbound'));
+  assert.ok(toolNames.includes('reset_inbound_traffic'));
 
   // 6. Execute tool: list_vpn_servers
   const result = await client.callTool({
@@ -272,6 +274,49 @@ test('MCP Client: Connects via SSE and executes list_vpn_servers', async () => {
   const postDelClients = JSON.parse(postDelResult.content[0].text);
   const deletedAlice = postDelClients.clients.find((c) => c.id === 'c1a11111-2222-3333-4444-555555555555');
   assert.equal(deletedAlice, undefined, 'Alice should be deleted');
+
+  // 12. Execute tool: update_inbound (set 500 GB monthly data limit on inbound 1)
+  const updateIbResult = await client.callTool({
+    name: 'update_inbound',
+    arguments: {
+      server: 'MCP Singapore Node',
+      inboundId: 1,
+      totalGB: 500,
+      expiryDays: 30
+    }
+  });
+
+  assert.ok(updateIbResult.content);
+  const updateIbData = JSON.parse(updateIbResult.content[0].text);
+  assert.equal(updateIbData.success, true);
+  assert.equal(updateIbData.totalQuota, '500 GB');
+  assert.equal(updateIbData.expiresIn, '30 days');
+
+  // 13. Execute tool: reset_inbound_traffic (reset inbound traffic to 0)
+  const resetIbResult = await client.callTool({
+    name: 'reset_inbound_traffic',
+    arguments: {
+      server: 'MCP Singapore Node',
+      inboundId: 1
+    }
+  });
+
+  assert.ok(resetIbResult.content);
+  const resetIbData = JSON.parse(resetIbResult.content[0].text);
+  assert.equal(resetIbData.success, true);
+  assert.match(resetIbData.message, /traffic counters on MCP Singapore Node have been reset to 0/i);
+
+  // 14. Verify list_inbounds reflects the new quota
+  const listIbResult = await client.callTool({
+    name: 'list_inbounds',
+    arguments: {
+      server: 'MCP Singapore Node'
+    }
+  });
+  const listIbData = JSON.parse(listIbResult.content[0].text);
+  const targetIb = listIbData.inbounds.find((ib) => ib.inboundId === 1);
+  assert.ok(targetIb);
+  assert.equal(targetIb.quotaLimitFormatted, '500.00 GB');
 
   await client.close();
 });
