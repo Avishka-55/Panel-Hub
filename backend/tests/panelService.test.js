@@ -214,5 +214,45 @@ test('linkGenerator: falls back to panel hostname for SNI and chrome for fp when
   assert.ok(links.v2rayLink.includes('fp=chrome'), 'should have fp=chrome');
 });
 
+test('panelService.deleteClient: disambiguates arguments when passed as (inboundId, clientId)', async () => {
+  // First add a client
+  await panelService.addClient(mockServer.url, 'admin', 'password123', 1, {
+    email: 'test-del-swap@example.com',
+    totalGB: 1000
+  });
+
+  const clients = await panelService.getInboundClients(mockServer.url, 'admin', 'password123', 1);
+  const target = clients.find((c) => c.email === 'test-del-swap@example.com');
+  assert.ok(target, 'Client should exist before deletion');
+
+  // Delete with inverted arguments: (inboundId, clientId)
+  const delRes = await panelService.deleteClient(
+    mockServer.url,
+    'admin',
+    'password123',
+    1, // inboundId first!
+    target.id // clientId second!
+  );
+  assert.equal(delRes.success, true);
+
+  const postClients = await panelService.getInboundClients(mockServer.url, 'admin', 'password123', 1);
+  const deletedTarget = postClients.find((c) => c.email === 'test-del-swap@example.com');
+  assert.equal(deletedTarget, undefined, 'Client should be successfully deleted despite inverted arguments');
+});
+
+test('panelService.resetClientTraffic: disambiguates arguments when passed as (inboundId, clientEmail)', async () => {
+  // Reset with inverted arguments: (inboundId, clientEmail)
+  const resetRes = await panelService.resetClientTraffic(
+    mockServer.url,
+    'admin',
+    'password123',
+    1, // inboundId first!
+    'alice@example.com' // email second!
+  );
+  assert.equal(resetRes.success, true);
+  assert.equal(resetRes.email, 'alice@example.com');
+});
+
+
 
 

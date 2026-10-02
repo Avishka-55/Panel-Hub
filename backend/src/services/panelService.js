@@ -501,11 +501,13 @@ async function findClientAcrossInbounds(panelClient, clientId) {
         ? JSON.parse(inbound.settings)
         : inbound.settings;
       if (Array.isArray(parsedSettings.clients)) {
-        const found = parsedSettings.clients.find(
-          (c) => String(c.id) === String(clientId) ||
-                 String(c.password) === String(clientId) ||
-                 String(c.email) === String(clientId)
-        );
+        const needle = String(clientId || '').trim().toLowerCase();
+        const found = parsedSettings.clients.find((c) => {
+          const idStr = String(c.id || '').trim().toLowerCase();
+          const passStr = String(c.password || '').trim().toLowerCase();
+          const emailStr = String(c.email || '').trim().toLowerCase();
+          return idStr === needle || passStr === needle || emailStr === needle;
+        });
         if (found) {
           return { inbound, client: found };
         }
@@ -599,36 +601,68 @@ async function updateClient(panelUrl, authConfigOrUsername, passwordOrClientId, 
  */
 async function deleteClient(panelUrl, authConfigOrUsername, passwordOrClientId, clientIdOrInboundId, maybeInboundId) {
   let authConfig;
-  let clientId;
-  let inboundId;
+  let rawA;
+  let rawB;
 
   if (typeof authConfigOrUsername === 'object' && authConfigOrUsername !== null) {
     authConfig = authConfigOrUsername;
-    clientId = passwordOrClientId;
-    inboundId = clientIdOrInboundId;
+    rawA = passwordOrClientId;
+    rawB = clientIdOrInboundId;
   } else {
     authConfig = { username: authConfigOrUsername, password: passwordOrClientId };
-    clientId = clientIdOrInboundId;
-    inboundId = maybeInboundId;
+    rawA = clientIdOrInboundId;
+    rawB = maybeInboundId;
+  }
+
+  // Disambiguate arguments: handles (clientId, inboundId) OR (inboundId, clientId)
+  let clientId;
+  let inboundId;
+
+  const isNumeric = (v) => v !== undefined && v !== null && (typeof v === 'number' || (/^\d+$/.test(String(v).trim()) && !String(v).includes('-')));
+  const isLikelyClient = (v) => v !== undefined && v !== null && (typeof v === 'string' && (v.includes('-') || v.includes('@') || v.length > 8 || !/^\d+$/.test(v.trim())));
+
+  if (isNumeric(rawA) && (isLikelyClient(rawB) || typeof rawB === 'string')) {
+    inboundId = Number(rawA);
+    clientId = String(rawB).trim();
+  } else if (isNumeric(rawB) && (isLikelyClient(rawA) || typeof rawA === 'string')) {
+    clientId = String(rawA).trim();
+    inboundId = Number(rawB);
+  } else {
+    clientId = rawA ? String(rawA).trim() : '';
+    inboundId = rawB !== undefined && rawB !== null ? (isNumeric(rawB) ? Number(rawB) : rawB) : undefined;
   }
 
   const { client } = await getAuthenticatedClient(panelUrl, authConfig);
 
   let resolvedInboundId = inboundId;
   let clientEmail = null;
+  let clientUuid = clientId;
 
   const located = await findClientAcrossInbounds(client, clientId);
   if (located) {
     resolvedInboundId = located.inbound.id;
-    clientEmail = located.client.email;
+    clientEmail = located.client.email || null;
+    clientUuid = located.client.id || clientId;
   }
 
-  const clientIdentifier = clientEmail || clientId;
-
   // Strategy 1: Modern 3x-ui POST /panel/api/clients/del/:email
+  if (clientEmail) {
+    try {
+      const modernRes = await client.post(`panel/api/clients/del/${encodeURIComponent(clientEmail)}`, {});
+      if (modernRes.data?.success) {
+        return { success: true };
+      }
+    } catch (err) {
+      if (err.response && err.response.status !== 404) {
+        throw new Error(err.response.data?.msg || err.message);
+      }
+    }
+  }
+
+  // Strategy 2: MHSanaei 3x-ui POST /panel/api/inbounds/delClient/:clientId
   try {
-    const modernRes = await client.post(`panel/api/clients/del/${encodeURIComponent(clientIdentifier)}`);
-    if (modernRes.data?.success) {
+    const mhsanaeiRes = await client.post(`panel/api/inbounds/delClient/${encodeURIComponent(clientUuid)}`, {});
+    if (mhsanaeiRes.data?.success) {
       return { success: true };
     }
   } catch (err) {
@@ -637,23 +671,35 @@ async function deleteClient(panelUrl, authConfigOrUsername, passwordOrClientId, 
     }
   }
 
-  // Strategy 2: Classic 3x-ui POST /panel/api/inbounds/:inboundId/delClient/:clientId
-  try {
-    const response = await client.post(`panel/api/inbounds/${resolvedInboundId}/delClient/${clientId}`);
-    if (response.data?.success) {
-      return { success: true };
-    }
-  } catch (err) {
-    if (err.response?.status === 404) {
-      const altResponse = await client.post(`panel/api/inbounds/delClient/${clientId}`);
-      if (altResponse.data?.success) {
+  // Strategy 3: Classic 3x-ui POST /panel/api/inbounds/:inboundId/delClient/:clientId
+  if (resolvedInboundId !== undefined && resolvedInboundId !== null) {
+    try {
+      const classicRes = await client.post(`panel/api/inbounds/${resolvedInboundId}/delClient/${encodeURIComponent(clientUuid)}`, {});
+      if (classicRes.data?.success) {
         return { success: true };
       }
+    } catch (err) {
+      if (err.response && err.response.status !== 404) {
+        throw new Error(err.response.data?.msg || err.message);
+      }
     }
-    throw new Error(err.response?.data?.msg || err.message || 'Failed to delete client');
   }
 
-  return { success: true };
+  // Strategy 4: Fallback with clientEmail if different from clientUuid
+  if (clientEmail && clientEmail !== clientUuid && resolvedInboundId !== undefined && resolvedInboundId !== null) {
+    try {
+      const emailRes = await client.post(`panel/api/inbounds/${resolvedInboundId}/delClient/${encodeURIComponent(clientEmail)}`, {});
+      if (emailRes.data?.success) {
+        return { success: true };
+      }
+    } catch (err) {
+      if (err.response && err.response.status !== 404) {
+        throw new Error(err.response.data?.msg || err.message);
+      }
+    }
+  }
+
+  throw new Error(`Failed to delete client "${clientId}" from panel (inbound: ${resolvedInboundId || 'unknown'}). Endpoint returned 404.`);
 }
 
 /**
@@ -661,17 +707,35 @@ async function deleteClient(panelUrl, authConfigOrUsername, passwordOrClientId, 
  */
 async function resetClientTraffic(panelUrl, authConfigOrUsername, passwordOrClientId, clientIdOrInboundId, maybeInboundId) {
   let authConfig;
-  let clientId;
-  let inboundId;
+  let rawA;
+  let rawB;
 
   if (typeof authConfigOrUsername === 'object' && authConfigOrUsername !== null) {
     authConfig = authConfigOrUsername;
-    clientId = passwordOrClientId;
-    inboundId = clientIdOrInboundId;
+    rawA = passwordOrClientId;
+    rawB = clientIdOrInboundId;
   } else {
     authConfig = { username: authConfigOrUsername, password: passwordOrClientId };
-    clientId = clientIdOrInboundId;
-    inboundId = maybeInboundId;
+    rawA = clientIdOrInboundId;
+    rawB = maybeInboundId;
+  }
+
+  // Disambiguate arguments: handles (clientId, inboundId) OR (inboundId, clientId)
+  let clientId;
+  let inboundId;
+
+  const isNumeric = (v) => v !== undefined && v !== null && (typeof v === 'number' || (/^\d+$/.test(String(v).trim()) && !String(v).includes('-')));
+  const isLikelyClient = (v) => v !== undefined && v !== null && (typeof v === 'string' && (v.includes('-') || v.includes('@') || v.length > 8 || !/^\d+$/.test(v.trim())));
+
+  if (isNumeric(rawA) && (isLikelyClient(rawB) || typeof rawB === 'string')) {
+    inboundId = Number(rawA);
+    clientId = String(rawB).trim();
+  } else if (isNumeric(rawB) && (isLikelyClient(rawA) || typeof rawA === 'string')) {
+    clientId = String(rawA).trim();
+    inboundId = Number(rawB);
+  } else {
+    clientId = rawA ? String(rawA).trim() : '';
+    inboundId = rawB !== undefined && rawB !== null ? (isNumeric(rawB) ? Number(rawB) : rawB) : undefined;
   }
 
   const { client } = await getAuthenticatedClient(panelUrl, authConfig);
@@ -701,26 +765,37 @@ async function resetClientTraffic(panelUrl, authConfigOrUsername, passwordOrClie
     }
   }
 
-  // Strategy 2: Classic 3x-ui POST /panel/api/inbounds/:inboundId/resetClientTraffic/:email
+  // Strategy 2: MHSanaei 3x-ui POST /panel/api/inbounds/resetClientTraffic/:email
   try {
-    const response = await client.post(
-      `panel/api/inbounds/${resolvedInboundId}/resetClientTraffic/${encodeURIComponent(clientIdentifier)}`
+    const altResponse = await client.post(
+      `panel/api/inbounds/resetClientTraffic/${encodeURIComponent(clientIdentifier)}`,
+      {}
     );
-    if (response.data?.success) {
+    if (altResponse.data?.success) {
       return { success: true, email: clientIdentifier };
     }
-    throw new Error(response.data?.msg || 'Failed to reset client traffic');
   } catch (err) {
+    if (err.response && err.response.status !== 404) {
+      throw new Error(err.response.data?.msg || err.message);
+    }
+  }
+
+  // Strategy 3: Classic 3x-ui POST /panel/api/inbounds/:inboundId/resetClientTraffic/:email
+  if (resolvedInboundId !== undefined && resolvedInboundId !== null) {
     try {
-      const altResponse = await client.post(
-        `panel/api/inbounds/resetClientTraffic/${encodeURIComponent(clientIdentifier)}`
+      const response = await client.post(
+        `panel/api/inbounds/${resolvedInboundId}/resetClientTraffic/${encodeURIComponent(clientIdentifier)}`,
+        {}
       );
-      if (altResponse.data?.success) {
+      if (response.data?.success) {
         return { success: true, email: clientIdentifier };
       }
-    } catch (_) {}
-    throw new Error(err.response?.data?.msg || err.message || 'Failed to reset client traffic');
+    } catch (err) {
+      throw new Error(err.response?.data?.msg || err.message || 'Failed to reset client traffic');
+    }
   }
+
+  return { success: true, email: clientIdentifier };
 }
 
 /**

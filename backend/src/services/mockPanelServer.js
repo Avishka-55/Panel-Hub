@@ -341,12 +341,15 @@ function createMock3xUiServer(port = 0, defaultUsername = 'admin', defaultPasswo
       return res.end(JSON.stringify({ success: false, msg: 'Client not found or update failed' }));
     }
 
-    // Route: POST /panel/api/clients/del/:clientId OR /panel/api/inbounds/:id/delClient/:clientId
+    // Route: POST /panel/api/clients/del/:clientId OR /panel/api/inbounds/:id/delClient/:clientId OR /panel/api/inbounds/delClient/:clientId
     const modernDelMatch = pathname.match(/^\/panel\/api\/clients\/del\/(.+)$/);
     const classicDelMatch = pathname.match(/^\/panel\/api\/inbounds\/(\d+)\/delClient\/(.+)$/);
+    const mhsanaeiDelMatch = pathname.match(/^\/panel\/api\/inbounds\/delClient\/(.+)$/);
 
-    if ((modernDelMatch || classicDelMatch) && req.method === 'POST') {
-      const clientId = decodeURIComponent(modernDelMatch ? modernDelMatch[1] : classicDelMatch[2]);
+    if ((modernDelMatch || classicDelMatch || mhsanaeiDelMatch) && req.method === 'POST') {
+      const clientId = decodeURIComponent(
+        modernDelMatch ? modernDelMatch[1] : (classicDelMatch ? classicDelMatch[2] : mhsanaeiDelMatch[1])
+      );
 
       for (const inbound of mockInbounds) {
         const currentSettings = JSON.parse(inbound.settings);
@@ -366,12 +369,15 @@ function createMock3xUiServer(port = 0, defaultUsername = 'admin', defaultPasswo
       return res.end(JSON.stringify({ success: false, msg: 'Client or inbound not found' }));
     }
 
-    // Route: POST /panel/api/clients/resetTraffic/:email OR /panel/api/inbounds/:id/resetClientTraffic/:email
+    // Route: POST /panel/api/clients/resetTraffic/:email OR /panel/api/inbounds/:id/resetClientTraffic/:email OR /panel/api/inbounds/resetClientTraffic/:email
     const modernResetMatch = pathname.match(/^\/panel\/api\/clients\/resetTraffic\/(.+)$/);
     const classicResetMatch = pathname.match(/^\/panel\/api\/inbounds\/(\d+)\/resetClientTraffic\/(.+)$/);
+    const mhsanaeiResetMatch = pathname.match(/^\/panel\/api\/inbounds\/resetClientTraffic\/(.+)$/);
 
-    if ((modernResetMatch || classicResetMatch) && req.method === 'POST') {
-      const email = decodeURIComponent(modernResetMatch ? modernResetMatch[1] : classicResetMatch[2]);
+    if ((modernResetMatch || classicResetMatch || mhsanaeiResetMatch) && req.method === 'POST') {
+      const email = decodeURIComponent(
+        modernResetMatch ? modernResetMatch[1] : (classicResetMatch ? classicResetMatch[2] : mhsanaeiResetMatch[1])
+      );
 
       for (const inbound of mockInbounds) {
         if (inbound.clientStats) {

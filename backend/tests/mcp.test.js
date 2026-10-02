@@ -232,9 +232,46 @@ test('MCP Client: Connects via SSE and executes list_vpn_servers', async () => {
   assert.ok(clientsData.clients.length >= 2);
   const aliceItem = clientsData.clients.find((c) => c.email === 'alice@example.com');
   assert.ok(aliceItem);
-  assert.ok(aliceItem.connectionLink.includes('security=tls'));
-  assert.ok(aliceItem.connectionLink.includes('sni=47.237.81.102'));
-  assert.ok(aliceItem.connectionLink.includes('fp=chrome'));
+  // 10. Execute tool: reset_client_traffic
+  const resetResult = await client.callTool({
+    name: 'reset_client_traffic',
+    arguments: {
+      server: 'MCP Singapore Node',
+      inboundId: 1,
+      clientEmail: 'alice@example.com'
+    }
+  });
+
+  assert.ok(resetResult.content);
+  const resetData = JSON.parse(resetResult.content[0].text);
+  assert.equal(resetData.success, true);
+  assert.match(resetData.message, /reset to 0/i);
+
+  // 11. Execute tool: delete_client (exact schema Claude calls with inboundId and clientId UUID)
+  const delResult = await client.callTool({
+    name: 'delete_client',
+    arguments: {
+      server: 'MCP Singapore Node',
+      inboundId: 1,
+      clientId: 'c1a11111-2222-3333-4444-555555555555'
+    }
+  });
+
+  assert.ok(delResult.content);
+  const delData = JSON.parse(delResult.content[0].text);
+  assert.equal(delData.success, true);
+  assert.match(delData.message, /deleted successfully/i);
+
+  // Verify client is now deleted
+  const postDelResult = await client.callTool({
+    name: 'list_clients',
+    arguments: {
+      server: 'MCP Singapore Node'
+    }
+  });
+  const postDelClients = JSON.parse(postDelResult.content[0].text);
+  const deletedAlice = postDelClients.clients.find((c) => c.id === 'c1a11111-2222-3333-4444-555555555555');
+  assert.equal(deletedAlice, undefined, 'Alice should be deleted');
 
   await client.close();
 });

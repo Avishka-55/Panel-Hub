@@ -522,11 +522,11 @@ function createPanelHubMcpServer(user) {
   // TOOL 6: delete_client
   mcpServer.tool(
     'delete_client',
-    'Permanently delete a VPN client user from a server inbound by their client UUID/ID. Use list_clients first to confirm the client ID.',
+    'Permanently delete a VPN client user from a server inbound by their client UUID/ID or email. Use list_clients first to confirm the client ID.',
     {
       server: z.string().describe('Server nickname or MongoDB ObjectId'),
-      inboundId: z.number().describe('Target Inbound ID containing the client'),
-      clientId: z.string().describe('Client ID or UUID (obtained from list_clients)')
+      inboundId: z.number().optional().describe('Target Inbound ID containing the client (optional)'),
+      clientId: z.string().describe('Client ID, UUID, or email (obtained from list_clients)')
     },
     async ({ server: serverIdentifier, inboundId, clientId }) => {
       try {
@@ -539,7 +539,7 @@ function createPanelHubMcpServer(user) {
         }
 
         const authConfig = getDecryptedAuthConfig(server);
-        await panelService.deleteClient(server.panelUrl, authConfig, inboundId, clientId);
+        await panelService.deleteClient(server.panelUrl, authConfig, clientId, inboundId);
 
         return {
           content: [
@@ -547,7 +547,9 @@ function createPanelHubMcpServer(user) {
               type: 'text',
               text: JSON.stringify({
                 success: true,
-                message: `Client ${clientId} was deleted from inbound ${inboundId} on ${server.nickname}.`
+                message: `Client ${clientId} was deleted successfully from ${server.nickname}.`,
+                server: server.nickname,
+                clientId
               })
             }
           ]
@@ -567,7 +569,7 @@ function createPanelHubMcpServer(user) {
     'Reset cumulative uploaded and downloaded bandwidth counters back to 0 for a specific client email on an inbound.',
     {
       server: z.string().describe('Server nickname or MongoDB ObjectId'),
-      inboundId: z.number().describe('Target Inbound ID containing the client'),
+      inboundId: z.number().optional().describe('Target Inbound ID containing the client (optional)'),
       clientEmail: z.string().describe('Client email or tag identifier (e.g. "john@mobile")')
     },
     async ({ server: serverIdentifier, inboundId, clientEmail }) => {
@@ -581,7 +583,7 @@ function createPanelHubMcpServer(user) {
         }
 
         const authConfig = getDecryptedAuthConfig(server);
-        await panelService.resetClientTraffic(server.panelUrl, authConfig, inboundId, clientEmail);
+        await panelService.resetClientTraffic(server.panelUrl, authConfig, clientEmail, inboundId);
 
         return {
           content: [
