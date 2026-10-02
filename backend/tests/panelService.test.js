@@ -148,4 +148,71 @@ test('panelService.restartXray: restarts Xray service on panel', async () => {
   assert.match(result.message, /restarted/i);
 });
 
+test('panelService.getInbounds: returns streamSettings and settings', async () => {
+  const inbounds = await panelService.getInbounds(mockServer.url, 'admin', 'password123');
+  assert.equal(Array.isArray(inbounds), true);
+  assert.ok(inbounds[0].streamSettings, 'streamSettings should be present');
+  assert.ok(inbounds[0].settings, 'settings should be present');
+
+  const stream = typeof inbounds[0].streamSettings === 'string' ? JSON.parse(inbounds[0].streamSettings) : inbounds[0].streamSettings;
+  assert.equal(stream.security, 'tls');
+  assert.equal(stream.tlsSettings.serverName, '47.237.81.102');
+});
+
+test('linkGenerator: generates VLESS URI with security=tls, sni, and fp matching panel link', () => {
+  const { generateClientLinks } = require('../src/utils/linkGenerator');
+  const mockInbound = {
+    id: 1,
+    protocol: 'vless',
+    port: 443,
+    listen: '',
+    remark: 'test_user',
+    streamSettings: JSON.stringify({
+      network: 'tcp',
+      security: 'tls',
+      tlsSettings: {
+        serverName: '47.237.81.102',
+        settings: {
+          fingerprint: 'chrome'
+        }
+      }
+    })
+  };
+  const mockClient = {
+    id: 'aaff9565-0881-4fa6-a342-45db2404f22e',
+    email: 'test_user',
+    flow: ''
+  };
+  const links = generateClientLinks(mockClient, mockInbound, 'https://47.237.81.102:2053');
+  assert.equal(
+    links.v2rayLink,
+    'vless://aaff9565-0881-4fa6-a342-45db2404f22e@47.237.81.102:443?type=tcp&security=tls&encryption=none&sni=47.237.81.102&fp=chrome#test_user'
+  );
+});
+
+test('linkGenerator: falls back to panel hostname for SNI and chrome for fp when not explicitly set', () => {
+  const { generateClientLinks } = require('../src/utils/linkGenerator');
+  const mockInbound = {
+    id: 1,
+    protocol: 'vless',
+    port: 443,
+    listen: '',
+    remark: 'test_user',
+    streamSettings: JSON.stringify({
+      network: 'tcp',
+      security: 'tls',
+      tlsSettings: {}
+    })
+  };
+  const mockClient = {
+    id: 'aaff9565-0881-4fa6-a342-45db2404f22e',
+    email: 'test_user'
+  };
+  const links = generateClientLinks(mockClient, mockInbound, 'https://47.237.81.102:2053');
+  assert.ok(links.v2rayLink.includes('sni=47.237.81.102'), 'should have host as sni');
+  assert.ok(links.v2rayLink.includes('security=tls'), 'should have security=tls');
+  assert.ok(links.v2rayLink.includes('fp=chrome'), 'should have fp=chrome');
+});
+
+
 

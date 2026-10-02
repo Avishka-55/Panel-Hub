@@ -46,7 +46,19 @@ function createMock3xUiServer(port = 0, defaultUsername = 'admin', defaultPasswo
           }
         ]
       }),
-      streamSettings: JSON.stringify({ network: 'ws', security: 'tls' }),
+      streamSettings: JSON.stringify({
+        network: 'ws',
+        security: 'tls',
+        tlsSettings: {
+          serverName: '47.237.81.102',
+          settings: {
+            fingerprint: 'chrome'
+          }
+        },
+        wsSettings: {
+          path: '/vless-ws'
+        }
+      }),
       tag: 'inbound-443',
       sniffing: '',
       clientStats: [
@@ -97,7 +109,16 @@ function createMock3xUiServer(port = 0, defaultUsername = 'admin', defaultPasswo
           }
         ]
       }),
-      streamSettings: JSON.stringify({ network: 'tcp', security: 'tls' }),
+      streamSettings: JSON.stringify({
+        network: 'tcp',
+        security: 'tls',
+        tlsSettings: {
+          serverName: 'trojan.example.com',
+          settings: {
+            fingerprint: 'chrome'
+          }
+        }
+      }),
       tag: 'inbound-8443',
       sniffing: '',
       clientStats: [

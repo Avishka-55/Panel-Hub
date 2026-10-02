@@ -14,6 +14,7 @@ const { connectDB, disconnectDB } = require('../src/config/db');
 const User = require('../src/models/User');
 const Server = require('../src/models/Server');
 const { encrypt } = require('../src/utils/crypto');
+const { createMock3xUiServer } = require('../src/services/mockPanelServer');
 const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
 const { SSEClientTransport } = require('@modelcontextprotocol/sdk/client/sse.js');
 
@@ -21,6 +22,7 @@ let server;
 let baseUrl;
 let testUser;
 let rawApiKey;
+let mockPanel;
 
 test.before(async () => {
   await connectDB();
@@ -41,16 +43,20 @@ test.before(async () => {
   });
   await testUser.save();
 
-  // Add a sample server for User
+  // Create mock 3x-ui server with realistic inbounds
+  mockPanel = await createMock3xUiServer(0, 'admin', 'password123');
+  const encPass = encrypt('password123');
+
+  // Add a sample server for User linked to mock 3x-ui
   const sampleServer = new Server({
     ownerId: testUser._id,
     nickname: 'MCP Singapore Node',
-    panelUrl: 'https://192.168.1.1:2053/panel',
+    panelUrl: mockPanel.url,
     authType: 'credentials',
     panelUsername: 'admin',
-    panelPasswordEncrypted: 'mockEncrypted',
-    panelPasswordIv: 'mockIv',
-    panelPasswordAuthTag: 'mockTag',
+    panelPasswordEncrypted: encPass.ciphertext,
+    panelPasswordIv: encPass.iv,
+    panelPasswordAuthTag: encPass.authTag,
     status: 'online'
   });
   await sampleServer.save();
@@ -67,6 +73,9 @@ test.before(async () => {
 test.after(async () => {
   if (server) {
     await new Promise((res) => server.close(res));
+  }
+  if (mockPanel) {
+    await mockPanel.close();
   }
   await User.deleteMany({});
   await Server.deleteMany({});
@@ -160,7 +169,7 @@ test('MCP Client: Connects via SSE and executes list_vpn_servers', async () => {
   assert.ok(toolNames.includes('restart_xray'));
   assert.ok(toolNames.includes('get_client_link'));
 
-  // 6. Execute tool
+  // 6. Execute tool: list_vpn_servers
   const result = await client.callTool({
     name: 'list_vpn_servers',
     arguments: {}
@@ -171,6 +180,61 @@ test('MCP Client: Connects via SSE and executes list_vpn_servers', async () => {
   const parsed = JSON.parse(result.content[0].text);
   assert.equal(parsed.count, 1);
   assert.equal(parsed.servers[0].nickname, 'MCP Singapore Node');
+
+  // 7. Execute tool: get_client_link (verify security=tls, sni, fp)
+  const linkResult = await client.callTool({
+    name: 'get_client_link',
+    arguments: {
+      server: 'MCP Singapore Node',
+      client: 'alice@example.com'
+    }
+  });
+
+  assert.ok(linkResult.content);
+  const linkData = JSON.parse(linkResult.content[0].text);
+  assert.equal(linkData.clientEmail, 'alice@example.com');
+  assert.ok(linkData.connectionLink, 'connectionLink should not be empty');
+  assert.ok(linkData.connectionLink.startsWith('vless://'), 'should be a vless link');
+  assert.ok(linkData.connectionLink.includes('security=tls'), 'should have security=tls');
+  assert.ok(linkData.connectionLink.includes('sni=47.237.81.102'), 'should have correct sni');
+  assert.ok(linkData.connectionLink.includes('fp=chrome'), 'should have fp=chrome');
+
+  // 8. Execute tool: add_client (verify newly created client returns connectionLink with tls, sni, fp)
+  const addResult = await client.callTool({
+    name: 'add_client',
+    arguments: {
+      server: 'MCP Singapore Node',
+      inboundId: 1,
+      email: 'mcp-newuser@vpn.com',
+      totalGB: 20,
+      expiryDays: 30
+    }
+  });
+
+  assert.ok(addResult.content);
+  const addData = JSON.parse(addResult.content[0].text);
+  assert.equal(addData.success, true);
+  assert.equal(addData.email, 'mcp-newuser@vpn.com');
+  assert.ok(addData.connectionLink.includes('security=tls'));
+  assert.ok(addData.connectionLink.includes('sni=47.237.81.102'));
+  assert.ok(addData.connectionLink.includes('fp=chrome'));
+
+  // 9. Execute tool: list_clients (verify clients array has connectionLink with tls, sni, fp)
+  const listClientsResult = await client.callTool({
+    name: 'list_clients',
+    arguments: {
+      server: 'MCP Singapore Node'
+    }
+  });
+
+  assert.ok(listClientsResult.content);
+  const clientsData = JSON.parse(listClientsResult.content[0].text);
+  assert.ok(clientsData.clients.length >= 2);
+  const aliceItem = clientsData.clients.find((c) => c.email === 'alice@example.com');
+  assert.ok(aliceItem);
+  assert.ok(aliceItem.connectionLink.includes('security=tls'));
+  assert.ok(aliceItem.connectionLink.includes('sni=47.237.81.102'));
+  assert.ok(aliceItem.connectionLink.includes('fp=chrome'));
 
   await client.close();
 });

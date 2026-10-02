@@ -293,7 +293,10 @@ async function getInbounds(panelUrl, authConfigOrUsername, password) {
       expiryTime: inbound.expiryTime || 0,
       tag: inbound.tag || '',
       clientCount: clientsCount,
-      clientStats: inbound.clientStats || []
+      clientStats: inbound.clientStats || [],
+      settings: inbound.settings,
+      streamSettings: inbound.streamSettings,
+      sniffing: inbound.sniffing
     };
   });
 }

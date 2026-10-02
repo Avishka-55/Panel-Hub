@@ -69,8 +69,8 @@ function generateVlessLink(client, inbound, host) {
     if (spiderX) params.set('spx', spiderX);
   } else if (security === 'tls') {
     const tls = stream.tlsSettings || {};
-    const serverName = tls.serverName || host;
-    const fp = tls.fingerprint || 'chrome';
+    const serverName = tls.serverName || (Array.isArray(tls.serverNames) ? tls.serverNames[0] : '') || host;
+    const fp = tls.settings?.fingerprint || tls.fingerprint || 'chrome';
     const alpn = Array.isArray(tls.alpn) ? tls.alpn.join(',') : (tls.alpn || '');
 
     if (serverName) params.set('sni', serverName);
@@ -116,7 +116,7 @@ function generateVmessLink(client, inbound, host) {
 
   if (security === 'tls') {
     const tls = stream.tlsSettings || {};
-    sni = tls.serverName || host;
+    sni = tls.serverName || (Array.isArray(tls.serverNames) ? tls.serverNames[0] : '') || host;
     alpn = Array.isArray(tls.alpn) ? tls.alpn.join(',') : (tls.alpn || '');
   }
 
@@ -163,8 +163,14 @@ function generateTrojanLink(client, inbound, host) {
 
   if (security === 'tls') {
     const tls = stream.tlsSettings || {};
-    if (tls.serverName) params.set('sni', tls.serverName);
-    if (tls.alpn) params.set('alpn', Array.isArray(tls.alpn) ? tls.alpn.join(',') : tls.alpn);
+    const serverName = tls.serverName || (Array.isArray(tls.serverNames) ? tls.serverNames[0] : '') || host;
+    if (serverName) params.set('sni', serverName);
+    const fp = tls.settings?.fingerprint || tls.fingerprint || 'chrome';
+    if (fp) params.set('fp', fp);
+    if (tls.alpn) {
+      const alpn = Array.isArray(tls.alpn) ? tls.alpn.join(',') : tls.alpn;
+      if (alpn) params.set('alpn', alpn);
+    }
   }
 
   if (network === 'ws') {
