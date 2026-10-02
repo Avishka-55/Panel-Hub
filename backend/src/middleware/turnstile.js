@@ -10,8 +10,8 @@ const config = require('../config/config');
 async function verifyTurnstile(req, res, next) {
   const secretKey = config.turnstileSecretKey;
 
-  // If Turnstile is not configured, bypass verification
-  if (!secretKey) {
+  // If in test environment or Turnstile is not configured, bypass verification
+  if (process.env.NODE_ENV === 'test' || !secretKey) {
     return next();
   }
 

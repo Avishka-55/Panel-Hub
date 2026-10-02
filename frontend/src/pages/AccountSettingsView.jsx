@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { authApi } from '../api/client';
 import {
@@ -18,7 +18,12 @@ import {
   Server,
   RefreshCw,
   Send,
-  X
+  X,
+  Bot,
+  Sparkles,
+  Copy,
+  Check,
+  Terminal
 } from 'lucide-react';
 
 export default function AccountSettingsView({ serverCount = 0, onOpenDailyReport }) {
@@ -45,6 +50,105 @@ export default function AccountSettingsView({ serverCount = 0, onOpenDailyReport
   const [resettingWithOtp, setResettingWithOtp] = useState(false);
   const [otpSuccess, setOtpSuccess] = useState(null);
   const [otpError, setOtpError] = useState(null);
+
+  // AI & MCP Integration API Key state
+  const [apiKeyData, setApiKeyData] = useState(null);
+  const [loadingApiKey, setLoadingApiKey] = useState(true);
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [copiedApiKey, setCopiedApiKey] = useState(false);
+  const [copiedClaudeConfig, setCopiedClaudeConfig] = useState(false);
+  const [generatingApiKey, setGeneratingApiKey] = useState(false);
+  const [revokingApiKey, setRevokingApiKey] = useState(false);
+  const [apiKeyMessage, setApiKeyMessage] = useState(null);
+  const [apiKeyError, setApiKeyError] = useState(null);
+  const [isRevokeModalOpen, setIsRevokeModalOpen] = useState(false);
+
+  useEffect(() => {
+    fetchApiKey();
+  }, []);
+
+  const fetchApiKey = async () => {
+    try {
+      setLoadingApiKey(true);
+      const res = await authApi.getApiKey();
+      if (res.success) {
+        setApiKeyData(res);
+      }
+    } catch (err) {
+      console.warn('Failed to load API key:', err);
+    } finally {
+      setLoadingApiKey(false);
+    }
+  };
+
+  const handleGenerateApiKey = async () => {
+    setGeneratingApiKey(true);
+    setApiKeyError(null);
+    setApiKeyMessage(null);
+    try {
+      const res = await authApi.generateApiKey();
+      if (res.success) {
+        setApiKeyData(res);
+        setShowApiKey(true);
+        setApiKeyMessage(res.message || 'New API key generated successfully!');
+        setTimeout(() => setApiKeyMessage(null), 5000);
+      } else {
+        setApiKeyError(res.error || 'Failed to generate API key');
+      }
+    } catch (err) {
+      setApiKeyError(err.response?.data?.error || err.message || 'Failed to generate API key');
+    } finally {
+      setGeneratingApiKey(false);
+    }
+  };
+
+  const handleRevokeApiKey = async () => {
+    setRevokingApiKey(true);
+    setApiKeyError(null);
+    try {
+      const res = await authApi.revokeApiKey();
+      if (res.success) {
+        setApiKeyData({ hasKey: false });
+        setShowApiKey(false);
+        setIsRevokeModalOpen(false);
+        setApiKeyMessage(res.message || 'API key revoked.');
+        setTimeout(() => setApiKeyMessage(null), 5000);
+      } else {
+        setApiKeyError(res.error || 'Failed to revoke API key');
+      }
+    } catch (err) {
+      setApiKeyError(err.response?.data?.error || err.message || 'Failed to revoke API key');
+    } finally {
+      setRevokingApiKey(false);
+    }
+  };
+
+  const handleCopyKey = () => {
+    if (!apiKeyData?.apiKey) return;
+    navigator.clipboard.writeText(apiKeyData.apiKey);
+    setCopiedApiKey(true);
+    setTimeout(() => setCopiedApiKey(false), 2500);
+  };
+
+  const handleCopyClaudeConfig = () => {
+    const configSnippet = JSON.stringify(
+      {
+        mcpServers: {
+          panelhub: {
+            url: `${window.location.origin}/api/mcp/sse`,
+            headers: {
+              Authorization: `Bearer ${apiKeyData?.apiKey || 'YOUR_API_KEY'}`
+            }
+          }
+        }
+      },
+      null,
+      2
+    );
+    navigator.clipboard.writeText(configSnippet);
+    setCopiedClaudeConfig(true);
+    setTimeout(() => setCopiedClaudeConfig(false), 2500);
+  };
 
   // Delete Account modal state
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -474,6 +578,185 @@ export default function AccountSettingsView({ serverCount = 0, onOpenDailyReport
         )}
       </div>
 
+      {/* AI & Model Context Protocol (MCP) Integration Key */}
+      <div className="p-4 sm:p-6 rounded-2xl bg-gradient-to-b from-slate-900/80 to-slate-900/40 border border-slate-800 shadow-xl space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20 shrink-0">
+              <Bot className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm sm:text-base font-bold text-white">AI & Model Context Protocol (MCP) Key</h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/10 text-purple-300 border border-purple-500/20">
+                  New
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">Authorize Claude, Cursor, ChatGPT, or custom AI agents to manage your 3x-ui panels</p>
+            </div>
+          </div>
+        </div>
+
+        {apiKeyMessage && (
+          <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2.5 animate-fadeIn">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>{apiKeyMessage}</span>
+          </div>
+        )}
+
+        {apiKeyError && (
+          <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2.5 animate-fadeIn">
+            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>{apiKeyError}</span>
+          </div>
+        )}
+
+        {loadingApiKey ? (
+          <div className="flex items-center justify-center py-8 text-xs text-slate-400 gap-2">
+            <Loader2 className="w-4 h-4 animate-spin text-purple-400" />
+            <span>Loading API key status...</span>
+          </div>
+        ) : !apiKeyData?.hasKey ? (
+          <div className="p-4 sm:p-5 rounded-xl bg-slate-950/60 border border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <p className="text-xs font-semibold text-white">No active API key</p>
+              <p className="text-[11px] text-slate-400 max-w-lg leading-relaxed">
+                Generate an AES-256-GCM encrypted API key to connect your PanelHub account to Claude Desktop, Cursor, or ChatGPT via Model Context Protocol (MCP).
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleGenerateApiKey}
+              disabled={generatingApiKey}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-lg shadow-purple-600/25 transition-all disabled:opacity-50 shrink-0 self-start sm:self-center"
+            >
+              {generatingApiKey ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+              <span>{generatingApiKey ? 'Generating Key...' : 'Generate MCP API Key'}</span>
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Active Key Display */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-semibold text-slate-300">
+                  Your MCP Access Key
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Active
+                  </span>
+                  {apiKeyData?.createdAt && (
+                    <span className="text-[11px] text-slate-500">
+                      Created {new Date(apiKeyData.createdAt).toLocaleDateString()}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    readOnly
+                    value={
+                      showApiKey
+                        ? apiKeyData.apiKey
+                        : `ph_live_${'•'.repeat(48)}${apiKeyData.last4 || ''}`
+                    }
+                    className="w-full bg-slate-950 border border-slate-800 text-xs font-mono text-slate-200 rounded-xl px-3.5 py-2.5 pr-20 select-all focus:outline-none focus:border-purple-500"
+                  />
+                  <div className="absolute right-2 top-2 flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKey((prev) => !prev)}
+                      title={showApiKey ? 'Mask Key' : 'Reveal Key'}
+                      className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+                    >
+                      {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCopyKey}
+                      title="Copy Key"
+                      className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+                    >
+                      {copiedApiKey ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleCopyKey}
+                  className="hidden sm:flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-md shadow-purple-600/20 transition-all shrink-0"
+                >
+                  {copiedApiKey ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedApiKey ? 'Copied!' : 'Copy Key'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Metadata & Key Actions */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 text-xs">
+              <p className="text-[11px] text-slate-400">
+                Last used: <span className="text-slate-300 font-medium">{apiKeyData.lastUsedAt ? new Date(apiKeyData.lastUsedAt).toLocaleString() : 'Never used yet'}</span>
+              </p>
+              <div className="flex items-center gap-2 self-start sm:self-center">
+                <button
+                  type="button"
+                  onClick={handleGenerateApiKey}
+                  disabled={generatingApiKey}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-medium border border-slate-700/60 transition-colors"
+                >
+                  {generatingApiKey ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                  <span>Regenerate</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsRevokeModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-medium border border-rose-500/20 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                  <span>Revoke</span>
+                </button>
+              </div>
+            </div>
+
+            {/* AI Setup Instructions Box */}
+            <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800/90 text-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-slate-300 font-semibold text-[11px]">
+                  <Terminal className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Claude Desktop & Cursor Configuration</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyClaudeConfig}
+                  className="text-[10px] font-semibold text-purple-400 hover:text-purple-300 flex items-center gap-1 transition-colors"
+                >
+                  {copiedClaudeConfig ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedClaudeConfig ? 'Copied Config!' : 'Copy Config JSON'}</span>
+                </button>
+              </div>
+              <pre className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-[11px] font-mono text-purple-200 overflow-x-auto">
+{`{
+  "mcpServers": {
+    "panelhub": {
+      "url": "${window.location.origin}/api/mcp/sse",
+      "headers": {
+        "Authorization": "Bearer ${apiKeyData?.apiKey || 'YOUR_API_KEY'}"
+      }
+    }
+  }
+}`}
+              </pre>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Automated Digest & Reports Quick Link */}
       <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/40 border border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -625,6 +908,52 @@ export default function AccountSettingsView({ serverCount = 0, onOpenDailyReport
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Revoke API Key Modal */}
+      {isRevokeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden p-6 space-y-4">
+            <div className="flex items-start justify-between">
+              <div className="p-2.5 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsRevokeModalOpen(false)}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div>
+              <h3 className="text-base font-bold text-white">Revoke MCP API Key?</h3>
+              <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                Are you sure you want to revoke this API key? Any connected AI assistants (Claude, Cursor, ChatGPT) will immediately lose access to your servers.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsRevokeModalOpen(false)}
+                className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleRevokeApiKey}
+                disabled={revokingApiKey}
+                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-500 rounded-xl shadow-lg shadow-rose-600/30 transition-all disabled:opacity-50"
+              >
+                {revokingApiKey ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                <span>{revokingApiKey ? 'Revoking...' : 'Revoke Key'}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -12,6 +12,8 @@ const {
   sendAccountDeletedNotification
 } = require('../utils/emailService');
 const { verifyTurnstile } = require('../middleware/turnstile');
+const crypto = require('crypto');
+const { encrypt, decrypt } = require('../utils/crypto');
 
 const router = express.Router();
 
@@ -563,6 +565,131 @@ router.delete('/account', authenticateToken, async (req, res) => {
     return res.status(500).json({
       success: false,
       error: 'Failed to delete account. Please try again.'
+    });
+  }
+});
+
+/**
+ * GET /api/auth/api-key
+ * Fetch the user's active MCP / AI integration key (decrypted for display).
+ */
+router.get('/api-key', authenticateToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select(
+      '+apiKeyEncrypted.ciphertext +apiKeyEncrypted.iv +apiKeyEncrypted.authTag +apiKeyHash'
+    );
+
+    if (!user || !user.apiKeyHash || !user.apiKeyEncrypted?.ciphertext) {
+      return res.status(200).json({
+        success: true,
+        hasKey: false
+      });
+    }
+
+    let rawKey = null;
+    try {
+      rawKey = decrypt(user.apiKeyEncrypted);
+    } catch (decErr) {
+      console.error('[API Key Decrypt Error]:', decErr.message);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to decrypt your API key. Please generate a new key.'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      hasKey: true,
+      apiKey: rawKey,
+      last4: user.apiKeyLast4,
+      createdAt: user.apiKeyCreatedAt,
+      lastUsedAt: user.apiKeyLastUsedAt
+    });
+  } catch (error) {
+    console.error('[Get API Key Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to retrieve API key information.'
+    });
+  }
+});
+
+/**
+ * POST /api/auth/api-key
+ * Generate or regenerate the user's MCP / AI integration key.
+ */
+router.post('/api-key', authenticateToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found.'
+      });
+    }
+
+    // Generate high-entropy 256-bit API key with standard prefix
+    const rawKey = 'ph_live_' + crypto.randomBytes(32).toString('hex');
+    const keyHash = crypto.createHash('sha256').update(rawKey).digest('hex');
+    const encryptedKey = encrypt(rawKey);
+
+    user.apiKeyEncrypted = encryptedKey;
+    user.apiKeyHash = keyHash;
+    user.apiKeyLast4 = rawKey.slice(-4);
+    user.apiKeyCreatedAt = new Date();
+    user.apiKeyLastUsedAt = null;
+
+    await user.save();
+
+    return res.status(201).json({
+      success: true,
+      hasKey: true,
+      apiKey: rawKey,
+      last4: user.apiKeyLast4,
+      createdAt: user.apiKeyCreatedAt,
+      message: 'New API Key generated successfully.'
+    });
+  } catch (error) {
+    console.error('[Generate API Key Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to generate new API key.'
+    });
+  }
+});
+
+/**
+ * DELETE /api/auth/api-key
+ * Revoke the user's MCP / AI integration key immediately.
+ */
+router.delete('/api-key', authenticateToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found.'
+      });
+    }
+
+    user.apiKeyEncrypted = undefined;
+    user.apiKeyHash = undefined;
+    user.apiKeyLast4 = undefined;
+    user.apiKeyCreatedAt = undefined;
+    user.apiKeyLastUsedAt = undefined;
+
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      hasKey: false,
+      message: 'API Key has been revoked. All AI integrations using this key are immediately deactivated.'
+    });
+  } catch (error) {
+    console.error('[Revoke API Key Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to revoke API key.'
     });
   }
 });

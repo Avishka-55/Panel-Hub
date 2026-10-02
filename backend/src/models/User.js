@@ -62,6 +62,30 @@ const userSchema = new mongoose.Schema(
     passwordChangedAt: {
       type: Date,
       default: null
+    },
+    // AI & MCP Integration API Key (Encrypted in AES-256-GCM vault)
+    apiKeyEncrypted: {
+      ciphertext: { type: String, select: false },
+      iv: { type: String, select: false },
+      authTag: { type: String, select: false }
+    },
+    apiKeyHash: {
+      type: String,
+      index: true,
+      sparse: true,
+      select: false
+    },
+    apiKeyLast4: {
+      type: String,
+      default: null
+    },
+    apiKeyCreatedAt: {
+      type: Date,
+      default: null
+    },
+    apiKeyLastUsedAt: {
+      type: Date,
+      default: null
     }
   },
   {
@@ -74,6 +98,8 @@ const userSchema = new mongoose.Schema(
         delete ret.resetPasswordOtp;
         delete ret.resetPasswordOtpExpires;
         delete ret.lastOtpSentAt;
+        delete ret.apiKeyEncrypted;
+        delete ret.apiKeyHash;
         delete ret.__v;
         return ret;
       }

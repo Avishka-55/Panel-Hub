@@ -9,6 +9,7 @@ const { apiLimiter } = require('./middleware/rateLimiter');
 const authRoutes = require('./routes/auth');
 const serverRoutes = require('./routes/servers');
 const reportRoutes = require('./routes/reports');
+const mcpRoutes = require('./routes/mcp');
 
 const app = express();
 
@@ -64,13 +65,15 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/servers', serverRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/mcp', mcpRoutes);
+app.use('/api/mcp', mcpRoutes);
 
 // Serve frontend static build if available
 const frontendDistPath = path.resolve(__dirname, '../../frontend/dist');
 if (fs.existsSync(frontendDistPath)) {
   app.use(express.static(frontendDistPath));
   app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api') || req.path.startsWith('/health')) {
+    if (req.path.startsWith('/api') || req.path.startsWith('/health') || req.path.startsWith('/mcp')) {
       return next();
     }
     res.sendFile(path.join(frontendDistPath, 'index.html'));

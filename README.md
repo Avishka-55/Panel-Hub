@@ -276,8 +276,8 @@ server {
         add_header Cache-Control "public, no-transform";
     }
 
-    # Proxy API Requests to Backend (Port 5000)
-    location /api/ {
+    # Proxy API & MCP Requests to Backend (Port 5000)
+    location ~ ^/(api|mcp)/ {
         proxy_pass http://127.0.0.1:5000;
         proxy_http_version 1.1;
 
@@ -291,7 +291,7 @@ server {
 
         proxy_buffering off;
         proxy_cache off;
-        proxy_read_timeout 60s;
+        proxy_read_timeout 300s;
     }
 }
 ```
@@ -376,6 +376,25 @@ All endpoints (except public authentication routes) require a JWT Bearer token:
 | `GET` | `/api/reports/daily/preview` | Preview real-time metrics for daily operations digest |
 | `PATCH` | `/api/reports/daily/preferences` | Configure preferred delivery UTC hour and enabled state |
 | `POST` | `/api/reports/daily/send-now` | Force immediate dispatch of daily operations digest |
+
+### 🤖 Model Context Protocol (MCP) & AI Integration
+Connect Claude Desktop, Cursor, ChatGPT, and AI agents directly to PanelHub via Server-Sent Events (SSE).
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/mcp` / `/mcp` | MCP service discovery and capabilities manifest |
+| `GET` | `/api/mcp/sse` / `/mcp/sse` | Establish persistent SSE transport connection (`Bearer` or `?apiKey=`) |
+| `POST` | `/api/mcp/messages` / `/mcp/messages` | Dispatch JSON-RPC tool calls and messages for active SSE session |
+
+#### Available MCP Tools
+- `list_vpn_servers`: List all connected 3x-ui servers owned by the user, including health & stats.
+- `get_server_status`: Fetch real-time hardware telemetry and Xray health for a server.
+- `list_inbounds`: List inbounds, ports, protocols (VLESS/VMess/Trojan/Shadowsocks), client counts.
+- `list_clients`: Inspect active clients, traffic consumption, and expiration dates.
+- `add_client`: Provision new VPN client with quota and expiration.
+- `delete_client`: Delete a client by ID/UUID from an inbound.
+- `reset_client_traffic`: Reset uploaded/downloaded bandwidth counters for a client email.
+- `restart_xray`: Reboot the live Xray core engine.
 
 ---
 

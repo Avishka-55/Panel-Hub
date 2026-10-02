@@ -80,6 +80,18 @@ export const authApi = {
   deleteAccount: async (password) => {
     const response = await api.delete('/auth/account', { data: { password } });
     return response.data;
+  },
+  getApiKey: async () => {
+    const response = await api.get('/auth/api-key');
+    return response.data;
+  },
+  generateApiKey: async () => {
+    const response = await api.post('/auth/api-key');
+    return response.data;
+  },
+  revokeApiKey: async () => {
+    const response = await api.delete('/auth/api-key');
+    return response.data;
   }
 };
 
